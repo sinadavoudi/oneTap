@@ -1,111 +1,154 @@
 #!/usr/bin/env bash
+# oneTap v1.1 – Instant SSH Access
+# Author: oneTap Project
+# License: MIT
+
 set -e
 
+### =========================
+### Constants & Globals
+### =========================
 APP_NAME="oneTap"
-STATE_DIR="/opt/onetap"
-KEYS_DIR="$STATE_DIR/keys"
-USERS_DIR="$STATE_DIR/users"
-PORT=22
+APP_VERSION="v1.1.0"
+SSH_CONFIG="/etc/ssh/sshd_config"
 
+### =========================
+### Helpers
+### =========================
 require_root() {
   if [[ $EUID -ne 0 ]]; then
-    echo "Please run as root."
+    echo "❌ Please run as root"
     exit 1
   fi
 }
 
-init_dirs() {
-  mkdir -p "$KEYS_DIR" "$USERS_DIR"
-  chmod 700 "$STATE_DIR" "$KEYS_DIR" "$USERS_DIR"
+get_server_ip() {
+  curl -s ipv4.icanhazip.com || hostname -I | awk '{print $1}'
 }
 
-pause() { read -p "Press Enter to continue..."; }
-
-have_domain_prompt() {
-  echo "Do you have a domain?"
-  echo "1) Yes"
-  echo "2) No (use server IP)"
-  read -p "Select [1-2]: " DSEL
-  if [[ "$DSEL" == "1" ]]; then
-    read -p "Enter domain name: " DOMAIN
-  else
-    DOMAIN="$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')"
-  fi
+get_ssh_port() {
+  local port
+  port=$(grep -i "^Port " "$SSH_CONFIG" | awk '{print $2}' | head -n1)
+  echo "${port:-22}"
 }
 
-create_profile() {
-  read -p "Profile name (leave empty for auto): " PNAME
-  if [[ -z "$PNAME" ]]; then
-    PNAME="tap_$(tr -dc a-f0-9 </dev/urandom | head -c 6)"
+pause() {
+  echo ""
+  read -p "Press Enter to continue..."
+}
+
+user_exists() {
+  id "$1" &>/dev/null
+}
+
+### =========================
+### Core Features
+### =========================
+create_user() {
+  echo ""
+  read -p "Enter username: " USERNAME
+  read -s -p "Enter password: " PASSWORD
+  echo ""
+
+  if user_exists "$USERNAME"; then
+    echo "❌ User already exists"
+    return
   fi
 
-  USER_HOME="$USERS_DIR/$PNAME"
-  mkdir -p "$USER_HOME/.ssh"
-  chmod 700 "$USER_HOME" "$USER_HOME/.ssh"
+  useradd -m -s /bin/bash "$USERNAME"
+  echo "$USERNAME:$PASSWORD" | chpasswd
 
-  ssh-keygen -t ed25519 -N "" -f "$KEYS_DIR/$PNAME" >/dev/null
+  echo "✅ User '$USERNAME' created successfully"
+}
 
-  PUBKEY="$(cat "$KEYS_DIR/$PNAME.pub")"
-  echo "$PUBKEY" > "$USER_HOME/.ssh/authorized_keys"
-  chmod 600 "$USER_HOME/.ssh/authorized_keys"
+list_users() {
+  echo ""
+  echo "📋 Existing SSH users:"
+  awk -F: '$3 >= 1000 {print "- " $1}' /etc/passwd
+}
 
-  useradd -M -d "$USER_HOME" -s /usr/sbin/nologin "$PNAME"
-  chown -R "$PNAME:$PNAME" "$USER_HOME"
+delete_user() {
+  echo ""
+  read -p "Enter username to delete: " USERNAME
 
-  have_domain_prompt
+  if ! user_exists "$USERNAME"; then
+    echo "❌ User does not exist"
+    return
+  fi
+
+  userdel -r "$USERNAME"
+  echo "🗑 User '$USERNAME' deleted"
+}
+
+show_connection_info() {
+  echo ""
+  read -p "Enter SSH username: " USERNAME
+
+  if ! user_exists "$USERNAME"; then
+    echo "❌ User does not exist"
+    return
+  fi
+
+  SERVER_IP=$(get_server_ip)
+  SSH_PORT=$(get_ssh_port)
 
   echo ""
-  echo "Profile created: $PNAME"
-  echo "--------------------------------"
-  echo "Private key: $KEYS_DIR/$PNAME"
-  echo "Connect with:"
-  echo "ssh -i $KEYS_DIR/$PNAME -N -D 1080 $PNAME@$DOMAIN -p $PORT"
-  echo "--------------------------------"
+  echo "========== $APP_NAME :: Connection Info =========="
+  echo ""
+  echo "Protocol : SSH"
+  echo "Server   : $SERVER_IP"
+  echo "Port     : $SSH_PORT"
+  echo "Username : $USERNAME"
+  echo "Password : (the one you set)"
+  echo ""
+  echo "📱 Shadowrocket (SSH Proxy)"
+  echo "  Type       : SSH"
+  echo "  Server     : $SERVER_IP"
+  echo "  Port       : $SSH_PORT"
+  echo "  Username   : $USERNAME"
+  echo "  Password   : your password"
+  echo "  Encryption : none"
+  echo ""
+  echo "🔗 Quick Link"
+  echo "ssh://$USERNAME@$SERVER_IP:$SSH_PORT"
+  echo ""
+  echo "==============================================="
 }
 
-list_profiles() {
-  echo "Existing profiles:"
-  ls "$USERS_DIR" 2>/dev/null || echo "None"
-}
-
-revoke_profile() {
-  list_profiles
-  read -p "Profile to revoke: " PNAME
-  if id "$PNAME" >/dev/null 2>&1; then
-    userdel "$PNAME"
-    rm -rf "$USERS_DIR/$PNAME" "$KEYS_DIR/$PNAME" "$KEYS_DIR/$PNAME.pub"
-    echo "Revoked: $PNAME"
-  else
-    echo "Profile not found."
-  fi
-}
-
+### =========================
+### Menu
+### =========================
 show_menu() {
   clear
-  echo "$APP_NAME"
-  echo "========================"
-  echo "1) Create access profile"
-  echo "2) List profiles"
-  echo "3) Revoke profile"
-  echo "4) Exit"
+  echo "===================================="
+  echo " $APP_NAME — Instant SSH Access"
+  echo " Version: $APP_VERSION"
+  echo "===================================="
+  echo "1) Create SSH user"
+  echo "2) List SSH users"
+  echo "3) Delete SSH user"
+  echo "4) Show client connection info"
+  echo "0) Exit"
   echo ""
-  read -p "Choose: " CH
 }
 
-main() {
-  require_root
-  init_dirs
-
+main_loop() {
   while true; do
     show_menu
-    case "$CH" in
-      1) create_profile; pause;;
-      2) list_profiles; pause;;
-      3) revoke_profile; pause;;
-      4) exit 0;;
-      *) echo "Invalid choice"; pause;;
+    read -p "Select an option: " CHOICE
+    case "$CHOICE" in
+      1) create_user; pause ;;
+      2) list_users; pause ;;
+      3) delete_user; pause ;;
+      4) show_connection_info; pause ;;
+      0) exit 0 ;;
+      *) echo "❌ Invalid option"; pause ;;
     esac
   done
 }
 
-main
+### =========================
+### Entry Point
+### =========================
+require_root
+main_loop

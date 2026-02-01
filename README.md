@@ -17,9 +17,11 @@ No panels. No dashboards. No browser.
 
 ## Install
 ```bash
-curl -fsSL https://github.com/sinadavoudi/oneTap/onetap.sh | sudo bash
+git clone https://github.com/sinadavoudi/oneTap.git
+cd oneTap
+chmod +x install.sh
+./install.sh
 ```
-(Replace with your hosted script URL)
 
 ## Usage
 Run the script and follow the menu:
