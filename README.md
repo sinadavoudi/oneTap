@@ -17,7 +17,7 @@ No panels. No dashboards. No browser.
 
 ## Install
 ```bash
-curl -fsSL https://example.com/onetap.sh | sudo bash
+curl -fsSL https://github.com/sinadavoudi/oneTap/onetap.sh | sudo bash
 ```
 (Replace with your hosted script URL)
 
