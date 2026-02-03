@@ -380,23 +380,6 @@ lsof -i :443
 
 ---
 
-## 🗺️ Roadmap
-
-### v2.2 (Coming Soon)
-- [ ] Web panel
-- [ ] Traffic stats
-- [ ] Multi-user support
-- [ ] Telegram bot
-- [ ] More protocols
-
-### v3.0 (Future)
-- [ ] CDN integration
-- [ ] IPv6 support
-- [ ] Docker image
-- [ ] Mobile companion app
-
----
-
 ## 🤝 Contributing
 
 **Ways to help:**
