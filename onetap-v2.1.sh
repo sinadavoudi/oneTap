@@ -52,10 +52,12 @@ get_ip() {
     echo "$ip"
 }
 
-# Random SNI list for auto mode (Iranian hosts first for better compatibility)
+# Random SNI list for auto mode (Iranian hosts first - EXPANDED)
 get_random_sni() {
     local snis=(
+        # Iranian Popular Sites (High Priority)
         "www.speedtest.net"
+        "www.cloudflare.com"
         "zula.ir"
         "www.digikala.com"
         "www.snapp.ir"
@@ -63,30 +65,67 @@ get_random_sni() {
         "www.isna.ir"
         "www.irancell.ir"
         "www.mci.ir"
+        "www.shatel.ir"
+        "www.mokhaberat.ir"
+        # Iranian Banks & Services
+        "www.sep.ir"
+        "www.shaparak.ir"
+        "www.enamad.ir"
+        "www.yjc.ir"
+        "www.tasnimnews.com"
+        "www.farsnews.ir"
+        "www.mehrnews.com"
+        # Iranian E-commerce & Apps
+        "www.divar.ir"
+        "www.torob.com"
+        "www.bamilo.com"
+        "www.fidibo.com"
+        "www.taaghche.com"
+        # Iranian Entertainment
+        "www.filimo.com"
+        "www.namava.ir"
+        "www.telewebion.com"
+        "www.varzesh3.com"
+        "www.khabaronline.ir"
+        # Iranian Tech & CDN
+        "cdn.tabnak.ir"
+        "static.cdn.asset.ir"
+        "cdn.yjc.ir"
+        # International (Fallback)
         "www.microsoft.com"
-        "www.cloudflare.com"
         "www.apple.com"
+        "www.amazon.com"
         "www.cisco.com"
-        "www.samsung.com"
+        "www.oracle.com"
         "update.microsoft.com"
         "dl.google.com"
     )
     echo "${snis[$RANDOM % ${#snis[@]}]}"
 }
 
-# Random path for WebSocket
+# Random path for WebSocket (EXPANDED)
 get_random_path() {
     local paths=(
         "/ws"
-        "/api/v1"
-        "/graphql"
-        "/socket.io"
+        "/api"
         "/v2ray"
         "/vless"
+        "/graphql"
+        "/socket.io"
         "/download"
         "/update"
-        "/cdn-cgi"
+        "/stream"
+        "/media"
         "/assets"
+        "/cdn-cgi"
+        "/ajax"
+        "/connect"
+        "/tunnel"
+        "/proxy"
+        "/data"
+        "/api/v1"
+        "/api/v2"
+        "/websocket"
     )
     echo "${paths[$RANDOM % ${#paths[@]}]}"
 }
@@ -208,64 +247,63 @@ ask_config_mode() {
     echo "$mode"
 }
 
-# Setup Reality (Option 1) with Auto/Manual
+# Setup Reality (Option 1) - NOW WITH WEBSOCKET
 setup_reality() {
     local ip=$1
+    local regenerate=${2:-false}
 
-    echo -e "\n${YELLOW}═══ Setting up Reality Protocol ═══${NC}\n"
+    if [ "$regenerate" = false ]; then
+        echo -e "\n${YELLOW}═══ Setting up Quick Setup (WebSocket) ═══${NC}\n"
 
-    # Ask for config mode
-    CONFIG_MODE=$(ask_config_mode)
+        # Ask for config mode only on first setup
+        CONFIG_MODE=$(ask_config_mode)
+    fi
 
-    # Generate UUID
+    # Generate UUID (new each time)
     UUID=$(cat /proc/sys/kernel/random/uuid)
     echo -e "UUID: ${GREEN}$UUID${NC}"
 
-    # Generate Reality keys
-    echo "Generating Reality keys..."
-    KEY_OUTPUT=$(/usr/local/bin/xray x25519)
-    PRIVATE_KEY=$(echo "$KEY_OUTPUT" | grep "PrivateKey:" | awk '{print $2}')
-    PUBLIC_KEY=$(echo "$KEY_OUTPUT" | grep "Password:" | awk '{print $2}')
-    SHORT_ID=$(openssl rand -hex 8)
-
     # Configure based on mode
-    if [ "$CONFIG_MODE" = "2" ]; then
+    if [ "$CONFIG_MODE" = "2" ] && [ "$regenerate" = false ]; then
         # Manual mode
         echo -e "\n${YELLOW}Manual Configuration:${NC}"
 
-        read -p "Enter SNI (e.g., www.google.com) [default: www.microsoft.com]: " CUSTOM_SNI
-        SNI=${CUSTOM_SNI:-www.microsoft.com}
+        read -p "Enter SNI/Host (e.g., www.digikala.com) [default: www.speedtest.net]: " CUSTOM_SNI
+        SNI=${CUSTOM_SNI:-www.speedtest.net}
 
         read -p "Enter port [default: 443]: " CUSTOM_PORT
         PORT=${CUSTOM_PORT:-443}
 
-        read -p "Enter destination (SNI:port) [default: $SNI:443]: " CUSTOM_DEST
-        DEST=${CUSTOM_DEST:-$SNI:443}
-
-        read -p "Enter fingerprint (chrome/firefox/safari) [default: chrome]: " CUSTOM_FP
-        FINGERPRINT=${CUSTOM_FP:-chrome}
+        read -p "Enter WebSocket path [default: /ws]: " CUSTOM_PATH
+        WS_PATH=${CUSTOM_PATH:-/ws}
 
     else
-        # Auto mode
-        echo -e "\n${GREEN}Auto Mode - Using optimized settings${NC}"
+        # Auto mode - Random Iranian host and path
         SNI=$(get_random_sni)
         PORT=443
-        DEST="$SNI:443"
-        FINGERPRINT="chrome"
+        WS_PATH=$(get_random_path)
     fi
 
     echo -e "\n${BLUE}Configuration:${NC}"
-    echo "  SNI: $SNI"
+    echo "  Host/SNI: $SNI"
     echo "  Port: $PORT"
-    echo "  Destination: $DEST"
-    echo "  Fingerprint: $FINGERPRINT"
+    echo "  WebSocket Path: $WS_PATH"
     echo ""
 
     # Clear port
-    echo "Clearing port $PORT..."
-    clear_port $PORT
+    if [ "$regenerate" = false ]; then
+        echo "Clearing port $PORT..."
+        clear_port $PORT
+    fi
 
-    # Create Xray config
+    # Delete old Xray config
+    echo "Cleaning old configurations..."
+    rm -f /usr/local/etc/xray/config.json.old
+    if [ -f /usr/local/etc/xray/config.json ]; then
+        mv /usr/local/etc/xray/config.json /usr/local/etc/xray/config.json.old
+    fi
+
+    # Create NEW Xray config with WebSocket
     echo "Creating Xray configuration..."
     mkdir -p /usr/local/etc/xray
     cat > /usr/local/etc/xray/config.json << EOF
@@ -280,26 +318,11 @@ setup_reality() {
       "decryption": "none"
     },
     "streamSettings": {
-      "network": "tcp",
-      "security": "none",
-      "tcpSettings": {
-        "header": {
-          "type": "http",
-          "request": {
-            "version": "1.1",
-            "method": "GET",
-            "path": ["/"],
-            "headers": {
-              "Host": ["$SNI"],
-              "User-Agent": [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)"
-              ],
-              "Accept-Encoding": ["gzip, deflate"],
-              "Connection": ["keep-alive"],
-              "Pragma": "no-cache"
-            }
-          }
+      "network": "ws",
+      "wsSettings": {
+        "path": "$WS_PATH",
+        "headers": {
+          "Host": "$SNI"
         }
       }
     }
@@ -308,44 +331,56 @@ setup_reality() {
 }
 EOF
 
-    # Configure firewall
-    echo "Configuring firewall..."
-    ufw --force enable >/dev/null 2>&1
-    ufw allow 22/tcp >/dev/null 2>&1
-    ufw allow $PORT/tcp >/dev/null 2>&1
-    ufw reload >/dev/null 2>&1
+    # Configure firewall (only on first setup)
+    if [ "$regenerate" = false ]; then
+        echo "Configuring firewall..."
+        ufw --force enable >/dev/null 2>&1
+        ufw allow 22/tcp >/dev/null 2>&1
+        ufw allow $PORT/tcp >/dev/null 2>&1
+        ufw reload >/dev/null 2>&1
+    fi
 
-    # Start Xray
-    echo "Starting Xray..."
-    systemctl enable xray >/dev/null 2>&1
+    # Restart Xray
+    echo "Restarting Xray..."
     systemctl restart xray
     sleep 3
 
     if ! systemctl is-active --quiet xray; then
         echo -e "${RED}✗ Xray failed to start${NC}"
         journalctl -u xray -n 15 --no-pager
+
+        # Restore old config if exists
+        if [ -f /usr/local/etc/xray/config.json.old ]; then
+            echo "Restoring previous configuration..."
+            mv /usr/local/etc/xray/config.json.old /usr/local/etc/xray/config.json
+            systemctl restart xray
+        fi
         return 1
     fi
 
     echo -e "${GREEN}✓ Xray is running${NC}"
 
-    # Generate config link (TCP with HTTP header obfuscation)
-    CONFIG="vless://$UUID@$ip:$PORT?encryption=none&security=none&type=tcp&headerType=http&host=$SNI#oneTap-TCP"
+    # Clean up old backup
+    rm -f /usr/local/etc/xray/config.json.old
+
+    # URL encode the path
+    ENCODED_PATH=$(echo -n "$WS_PATH" | jq -sRr @uri)
+
+    # Generate config link - WebSocket version
+    CONFIG="vless://$UUID@$ip:$PORT?encryption=none&security=none&type=ws&host=$SNI&path=$ENCODED_PATH#oneTap-Quick"
 
     # Save config
     cat > /root/onetap-config.txt << EOF
 ╔══════════════════════════════════════╗
-║     oneTap - Reality Configuration   ║
+║   oneTap - Quick Setup (WebSocket)   ║
 ╚══════════════════════════════════════╝
 
 Server IP: $ip
 Port: $PORT
 UUID: $UUID
-Protocol: VLESS + Reality
-SNI: $SNI
-Fingerprint: $FINGERPRINT
-Public Key: $PUBLIC_KEY
-Short ID: $SHORT_ID
+Protocol: VLESS + WebSocket
+Host/SNI: $SNI
+Path: $WS_PATH
 Config Mode: $([ "$CONFIG_MODE" = "2" ] && echo "Manual" || echo "Auto")
 
 ═══════════════════════════════════════
@@ -359,7 +394,7 @@ EOF
     # Display
     clear
     echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║      ✓ INSTALLATION COMPLETE!       ║${NC}"
+    echo -e "${GREEN}║      ✓ SETUP COMPLETE!              ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════╝${NC}\n"
 
     cat /root/onetap-config.txt
@@ -377,7 +412,37 @@ EOF
     echo "  Windows: v2rayN"
 
     echo -e "\n${GREEN}✓ Config saved to: /root/onetap-config.txt${NC}"
-    echo -e "${YELLOW}View anytime: cat /root/onetap-config.txt${NC}\n"
+
+    # Regenerate option
+    echo -e "\n${BLUE}═══════════════════════════════════════${NC}"
+    echo -e "${YELLOW}Options:${NC}"
+    echo "  1) Test this config"
+    echo "  2) Regenerate (new host + path)"
+    echo "  3) Back to main menu"
+    echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
+
+    read -p "Choose [1-3]: " regen_choice
+
+    case $regen_choice in
+        1)
+            echo -e "\n${GREEN}Test the config in your app!${NC}"
+            echo "If it doesn't work, come back and choose option 2."
+            echo ""
+            read -p "Press Enter when ready to continue..."
+            setup_reality "$ip" false
+            ;;
+        2)
+            echo -e "\n${YELLOW}Regenerating with new random host + path...${NC}\n"
+            sleep 1
+            setup_reality "$ip" true
+            ;;
+        3)
+            return 0
+            ;;
+        *)
+            return 0
+            ;;
+    esac
 }
 
 # Setup Premium (Option 2) with Auto/Manual
@@ -921,7 +986,7 @@ uninstall() {
 main_menu() {
     echo -e "${BLUE}═══════════════════════════════════════${NC}"
     echo -e "${GREEN}Choose your setup:${NC}\n"
-    echo -e "  ${YELLOW}1)${NC} Quick Setup (TCP - No domain) ${GREEN}← Recommended${NC}"
+    echo -e "  ${YELLOW}1)${NC} Quick Setup (WebSocket - No domain) ${GREEN}← Recommended${NC}"
     echo -e "  ${YELLOW}2)${NC} Premium Setup (WS+TLS - With domain)"
     echo -e "  ${YELLOW}3)${NC} Advanced Setup (Multiple protocols)"
     echo -e "  ${YELLOW}4)${NC} DNS Tunnel (DNSTT - For heavy filtering)"
