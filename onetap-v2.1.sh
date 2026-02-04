@@ -197,20 +197,20 @@ install_pingtunnel() {
     fi
 
     echo -e "${YELLOW}Installing PingTunnel using official installer...${NC}"
-
+    
     cd /tmp
     curl -fsSL https://raw.githubusercontent.com/HexaSoftwareDev/PingTunnel-Server/main/installer.sh -o installer.sh
-
+    
     if [ ! -f installer.sh ]; then
         echo -e "${RED}✗ Failed to download installer${NC}"
         return 1
     fi
-
+    
     # Run the installer (it handles everything automatically)
     bash installer.sh
-
+    
     rm -f installer.sh
-
+    
     echo -e "${GREEN}✓ PingTunnel installed${NC}"
 }
 
@@ -242,7 +242,7 @@ ask_config_mode() {
     echo -e "     - Full control"
     echo -e "     - For experienced users\n"
     echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
-
+    
     read -p "Choose mode (1=Auto / 2=Manual): " mode
     echo "$mode"
 }
@@ -254,11 +254,11 @@ setup_reality() {
 
     if [ "$regenerate" = false ]; then
         echo -e "\n${YELLOW}═══ Setting up Quick Setup (WebSocket) ═══${NC}\n"
-
+        
         # Ask for config mode only on first setup
         CONFIG_MODE=$(ask_config_mode)
     fi
-
+    
     # Generate UUID (new each time)
     UUID=$(cat /proc/sys/kernel/random/uuid)
     echo -e "UUID: ${GREEN}$UUID${NC}"
@@ -267,23 +267,23 @@ setup_reality() {
     if [ "$CONFIG_MODE" = "2" ] && [ "$regenerate" = false ]; then
         # Manual mode
         echo -e "\n${YELLOW}Manual Configuration:${NC}"
-
+        
         read -p "Enter SNI/Host (e.g., www.digikala.com) [default: www.speedtest.net]: " CUSTOM_SNI
         SNI=${CUSTOM_SNI:-www.speedtest.net}
-
+        
         read -p "Enter port [default: 443]: " CUSTOM_PORT
         PORT=${CUSTOM_PORT:-443}
-
+        
         read -p "Enter WebSocket path [default: /ws]: " CUSTOM_PATH
         WS_PATH=${CUSTOM_PATH:-/ws}
-
+        
     else
         # Auto mode - Random Iranian host and path
         SNI=$(get_random_sni)
         PORT=443
         WS_PATH=$(get_random_path)
     fi
-
+    
     echo -e "\n${BLUE}Configuration:${NC}"
     echo "  Host/SNI: $SNI"
     echo "  Port: $PORT"
@@ -296,17 +296,17 @@ setup_reality() {
         clear_port $PORT
     fi
 
-    # Delete old Xray config
-    echo "Cleaning old configurations..."
-    rm -f /usr/local/etc/xray/config.json.old
-    if [ -f /usr/local/etc/xray/config.json ]; then
-        mv /usr/local/etc/xray/config.json /usr/local/etc/xray/config.json.old
+    # Delete old Quick Setup configs only (not Premium configs)
+    echo "Cleaning old Quick Setup configurations..."
+    rm -f /usr/local/etc/xray/config-quick.json.old
+    if [ -f /usr/local/etc/xray/config-quick.json ]; then
+        mv /usr/local/etc/xray/config-quick.json /usr/local/etc/xray/config-quick.json.old
     fi
 
     # Create NEW Xray config with WebSocket
     echo "Creating Xray configuration..."
     mkdir -p /usr/local/etc/xray
-    cat > /usr/local/etc/xray/config.json << EOF
+    cat > /usr/local/etc/xray/config-quick.json << EOF
 {
   "log": {"loglevel": "warning"},
   "inbounds": [{
@@ -331,6 +331,9 @@ setup_reality() {
 }
 EOF
 
+    # Link to main config
+    ln -sf /usr/local/etc/xray/config-quick.json /usr/local/etc/xray/config.json
+
     # Configure firewall (only on first setup)
     if [ "$regenerate" = false ]; then
         echo "Configuring firewall..."
@@ -348,20 +351,21 @@ EOF
     if ! systemctl is-active --quiet xray; then
         echo -e "${RED}✗ Xray failed to start${NC}"
         journalctl -u xray -n 15 --no-pager
-
+        
         # Restore old config if exists
-        if [ -f /usr/local/etc/xray/config.json.old ]; then
+        if [ -f /usr/local/etc/xray/config-quick.json.old ]; then
             echo "Restoring previous configuration..."
-            mv /usr/local/etc/xray/config.json.old /usr/local/etc/xray/config.json
+            mv /usr/local/etc/xray/config-quick.json.old /usr/local/etc/xray/config-quick.json
+            ln -sf /usr/local/etc/xray/config-quick.json /usr/local/etc/xray/config.json
             systemctl restart xray
         fi
         return 1
     fi
 
     echo -e "${GREEN}✓ Xray is running${NC}"
-
+    
     # Clean up old backup
-    rm -f /usr/local/etc/xray/config.json.old
+    rm -f /usr/local/etc/xray/config-quick.json.old
 
     # URL encode the path
     ENCODED_PATH=$(echo -n "$WS_PATH" | jq -sRr @uri)
@@ -369,8 +373,8 @@ EOF
     # Generate config link - WebSocket version
     CONFIG="vless://$UUID@$ip:$PORT?encryption=none&security=none&type=ws&host=$SNI&path=$ENCODED_PATH#oneTap-Quick"
 
-    # Save config
-    cat > /root/onetap-config.txt << EOF
+    # Save config to separate file
+    cat > /root/onetap-quick-config.txt << EOF
 ╔══════════════════════════════════════╗
 ║   oneTap - Quick Setup (WebSocket)   ║
 ╚══════════════════════════════════════╝
@@ -397,7 +401,7 @@ EOF
     echo -e "${GREEN}║      ✓ SETUP COMPLETE!              ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════╝${NC}\n"
 
-    cat /root/onetap-config.txt
+    cat /root/onetap-quick-config.txt
 
     echo -e "\n${YELLOW}QR CODE (scan with phone):${NC}"
     if command -v qrencode >/dev/null 2>&1; then
@@ -411,8 +415,8 @@ EOF
     echo "  iOS: Streisand or Shadowrocket"
     echo "  Windows: v2rayN"
 
-    echo -e "\n${GREEN}✓ Config saved to: /root/onetap-config.txt${NC}"
-
+    echo -e "\n${GREEN}✓ Config saved to: /root/onetap-quick-config.txt${NC}"
+    
     # Regenerate option
     echo -e "\n${BLUE}═══════════════════════════════════════${NC}"
     echo -e "${YELLOW}Options:${NC}"
@@ -420,9 +424,9 @@ EOF
     echo "  2) Regenerate (new host + path)"
     echo "  3) Back to main menu"
     echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
-
+    
     read -p "Choose [1-3]: " regen_choice
-
+    
     case $regen_choice in
         1)
             echo -e "\n${GREEN}Test the config in your app!${NC}"
@@ -445,69 +449,98 @@ EOF
     esac
 }
 
-# Setup Premium (Option 2) with Auto/Manual
+# Setup Premium (Option 2) with Auto/Manual and SNI choice
 setup_premium() {
     local domain=$1
     local ip=$2
+    local regenerate=${3:-false}
 
-    echo -e "\n${YELLOW}═══ Setting up Premium (WS+TLS) ═══${NC}\n"
+    if [ "$regenerate" = false ]; then
+        echo -e "\n${YELLOW}═══ Setting up Premium (WS+TLS) ═══${NC}\n"
+        
+        # Ask for config mode only on first setup
+        CONFIG_MODE=$(ask_config_mode)
+    fi
 
-    # Ask for config mode
-    CONFIG_MODE=$(ask_config_mode)
-
-    # Generate UUID
+    # Generate UUID (new each time)
     UUID=$(cat /proc/sys/kernel/random/uuid)
     echo -e "UUID: ${GREEN}$UUID${NC}"
 
     # Configure based on mode
-    if [ "$CONFIG_MODE" = "2" ]; then
+    if [ "$CONFIG_MODE" = "2" ] && [ "$regenerate" = false ]; then
         # Manual mode
         echo -e "\n${YELLOW}Manual Configuration:${NC}"
-
+        
+        echo -e "\n${BLUE}SNI/Host Options:${NC}"
+        echo "  1) Use domain as SNI ($domain)"
+        echo "  2) Use random Iranian host"
+        read -p "Choose SNI option [1-2]: " sni_choice
+        
+        if [ "$sni_choice" = "2" ]; then
+            SNI=$(get_random_sni)
+            echo "Selected SNI: $SNI"
+        else
+            SNI=$domain
+        fi
+        
         read -p "Enter WebSocket path [default: /ws]: " CUSTOM_PATH
         WS_PATH=${CUSTOM_PATH:-/ws}
-
+        
         read -p "Enter port [default: 443]: " CUSTOM_PORT
         PORT=${CUSTOM_PORT:-443}
-
-        read -p "Enter host header [default: $domain]: " CUSTOM_HOST
-        WS_HOST=${CUSTOM_HOST:-$domain}
-
+        
+        WS_HOST=$domain
+        
     else
-        # Auto mode
+        # Auto mode - Use Iranian host by default
         echo -e "\n${GREEN}Auto Mode - Using optimized settings${NC}"
+        echo -e "${YELLOW}Using random Iranian host for better compatibility${NC}"
+        
+        SNI=$(get_random_sni)
         WS_PATH=$(get_random_path)
         PORT=443
         WS_HOST=$domain
     fi
-
+    
     echo -e "\n${BLUE}Configuration:${NC}"
     echo "  Domain: $domain"
+    echo "  SNI: $SNI"
     echo "  Port: $PORT"
     echo "  Path: $WS_PATH"
     echo "  Host: $WS_HOST"
     echo ""
 
-    # Test DNS
-    echo "Testing DNS..."
-    RESOLVED=$(dig +short "$domain" @8.8.8.8 | tail -n1)
-    if [ -z "$RESOLVED" ]; then
-        echo -e "${RED}⚠ Cannot resolve domain${NC}"
-    elif [ "$RESOLVED" != "$ip" ]; then
-        echo -e "${YELLOW}⚠ Domain resolves to $RESOLVED, server is $ip${NC}"
-    else
-        echo -e "${GREEN}✓ DNS correct${NC}"
+    # Test DNS (only on first setup)
+    if [ "$regenerate" = false ]; then
+        echo "Testing DNS..."
+        RESOLVED=$(dig +short "$domain" @8.8.8.8 | tail -n1)
+        if [ -z "$RESOLVED" ]; then
+            echo -e "${RED}⚠ Cannot resolve domain${NC}"
+        elif [ "$RESOLVED" != "$ip" ]; then
+            echo -e "${YELLOW}⚠ Domain resolves to $RESOLVED, server is $ip${NC}"
+        else
+            echo -e "${GREEN}✓ DNS correct${NC}"
+        fi
     fi
 
-    # Clear ports
-    echo "Clearing ports 80 and $PORT..."
-    clear_port 80
-    clear_port $PORT
+    # Clear ports (only on first setup)
+    if [ "$regenerate" = false ]; then
+        echo "Clearing ports 80 and $PORT..."
+        clear_port 80
+        clear_port $PORT
+    fi
+
+    # Delete OLD Premium configs only (not Quick Setup configs)
+    echo "Cleaning old Premium configurations..."
+    rm -f /usr/local/etc/xray/config-premium.json.old
+    if [ -f /usr/local/etc/xray/config-premium.json ]; then
+        mv /usr/local/etc/xray/config-premium.json /usr/local/etc/xray/config-premium.json.old
+    fi
 
     # Create Xray config
     echo "Creating Xray configuration..."
     mkdir -p /usr/local/etc/xray
-    cat > /usr/local/etc/xray/config.json << EOF
+    cat > /usr/local/etc/xray/config-premium.json << EOF
 {
   "log": {"loglevel": "warning"},
   "inbounds": [{
@@ -532,6 +565,9 @@ setup_premium() {
 }
 EOF
 
+    # Link to main config
+    ln -sf /usr/local/etc/xray/config-premium.json /usr/local/etc/xray/config.json
+
     # Create Caddy config
     echo "Creating Caddy configuration..."
     mkdir -p /etc/caddy
@@ -542,47 +578,71 @@ $domain {
 }
 EOF
 
-    # Start Xray
-    echo "Starting Xray..."
-    systemctl enable xray >/dev/null 2>&1
-    systemctl restart xray
-    sleep 2
+    # Start Xray (only on first setup)
+    if [ "$regenerate" = false ]; then
+        echo "Starting Xray..."
+        systemctl enable xray >/dev/null 2>&1
+        systemctl restart xray
+        sleep 2
 
-    if ! systemctl is-active --quiet xray; then
-        echo -e "${RED}✗ Xray failed${NC}"
-        journalctl -u xray -n 10 --no-pager
-        return 1
+        if ! systemctl is-active --quiet xray; then
+            echo -e "${RED}✗ Xray failed${NC}"
+            journalctl -u xray -n 10 --no-pager
+            
+            # Restore old config if exists
+            if [ -f /usr/local/etc/xray/config-premium.json.old ]; then
+                echo "Restoring previous configuration..."
+                mv /usr/local/etc/xray/config-premium.json.old /usr/local/etc/xray/config-premium.json
+                ln -sf /usr/local/etc/xray/config-premium.json /usr/local/etc/xray/config.json
+                systemctl restart xray
+            fi
+            return 1
+        fi
+        echo -e "${GREEN}✓ Xray running${NC}"
+
+        # Start Caddy
+        echo "Starting Caddy (getting SSL certificate)..."
+        systemctl enable caddy >/dev/null 2>&1
+        systemctl restart caddy
+
+        echo "Waiting for SSL (30 seconds)..."
+        sleep 30
+
+        if ! systemctl is-active --quiet caddy; then
+            echo -e "${RED}✗ Caddy failed${NC}"
+            journalctl -u caddy -n 10 --no-pager
+            return 1
+        fi
+        echo -e "${GREEN}✓ Caddy running with SSL${NC}"
+    else
+        # Just restart on regenerate
+        systemctl restart xray
+        sleep 2
+        if ! systemctl is-active --quiet xray; then
+            echo -e "${RED}✗ Xray failed${NC}"
+            journalctl -u xray -n 10 --no-pager
+            return 1
+        fi
     fi
-    echo -e "${GREEN}✓ Xray running${NC}"
 
-    # Start Caddy
-    echo "Starting Caddy (getting SSL certificate)..."
-    systemctl enable caddy >/dev/null 2>&1
-    systemctl restart caddy
+    # Clean up old backup
+    rm -f /usr/local/etc/xray/config-premium.json.old
 
-    echo "Waiting for SSL (30 seconds)..."
-    sleep 30
-
-    if ! systemctl is-active --quiet caddy; then
-        echo -e "${RED}✗ Caddy failed${NC}"
-        journalctl -u caddy -n 10 --no-pager
-        return 1
+    # Firewall (only on first setup)
+    if [ "$regenerate" = false ]; then
+        ufw --force enable >/dev/null 2>&1
+        ufw allow 22/tcp >/dev/null 2>&1
+        ufw allow 80/tcp >/dev/null 2>&1
+        ufw allow $PORT/tcp >/dev/null 2>&1
+        ufw reload >/dev/null 2>&1
     fi
-    echo -e "${GREEN}✓ Caddy running with SSL${NC}"
-
-    # Firewall
-    ufw --force enable >/dev/null 2>&1
-    ufw allow 22/tcp >/dev/null 2>&1
-    ufw allow 80/tcp >/dev/null 2>&1
-    ufw allow $PORT/tcp >/dev/null 2>&1
-    ufw reload >/dev/null 2>&1
 
     # Generate config (URL encode path)
     ENCODED_PATH=$(echo -n "$WS_PATH" | jq -sRr @uri)
-    CONFIG="vless://$UUID@$domain:$PORT?encryption=none&security=tls&type=ws&host=$WS_HOST&path=$ENCODED_PATH&sni=$domain#oneTap-Premium"
+    CONFIG="vless://$UUID@$domain:$PORT?encryption=none&security=tls&type=ws&host=$WS_HOST&path=$ENCODED_PATH&sni=$SNI#oneTap-Premium"
 
-    # Save config
-    cat > /root/onetap-config.txt << EOF
+    # Save config to separate file
+    cat > /root/onetap-premium-config.txt << EOF
 ╔══════════════════════════════════════╗
 ║    oneTap - Premium Configuration    ║
 ╚══════════════════════════════════════╝
@@ -591,6 +651,7 @@ Domain: $domain
 Port: $PORT
 UUID: $UUID
 Protocol: VLESS + WebSocket + TLS
+SNI: $SNI
 Path: $WS_PATH
 Host: $WS_HOST
 Config Mode: $([ "$CONFIG_MODE" = "2" ] && echo "Manual" || echo "Auto")
@@ -606,10 +667,10 @@ EOF
     # Display
     clear
     echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║      ✓ INSTALLATION COMPLETE!       ║${NC}"
+    echo -e "${GREEN}║      ✓ SETUP COMPLETE!              ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════╝${NC}\n"
 
-    cat /root/onetap-config.txt
+    cat /root/onetap-premium-config.txt
 
     echo -e "\n${YELLOW}QR CODE (scan with phone):${NC}"
     if command -v qrencode >/dev/null 2>&1; then
@@ -623,15 +684,377 @@ EOF
     echo "  iOS: Streisand or Shadowrocket"
     echo "  Windows: v2rayN"
 
-    echo -e "\n${GREEN}✓ Config saved to: /root/onetap-config.txt${NC}\n"
+    echo -e "\n${GREEN}✓ Config saved to: /root/onetap-premium-config.txt${NC}"
+    
+    # Regenerate option
+    echo -e "\n${BLUE}═══════════════════════════════════════${NC}"
+    echo -e "${YELLOW}Options:${NC}"
+    echo "  1) Test this config"
+    echo "  2) Regenerate (new SNI + path)"
+    echo "  3) Back to main menu"
+    echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
+    
+    read -p "Choose [1-3]: " regen_choice
+    
+    case $regen_choice in
+        1)
+            echo -e "\n${GREEN}Test the config in your app!${NC}"
+            echo "If it doesn't work, come back and choose option 2."
+            echo ""
+            read -p "Press Enter when ready to continue..."
+            setup_premium "$domain" "$ip" false
+            ;;
+        2)
+            echo -e "\n${YELLOW}Regenerating with new SNI + path...${NC}\n"
+            sleep 1
+            setup_premium "$domain" "$ip" true
+            ;;
+        3)
+            return 0
+            ;;
+        *)
+            return 0
+            ;;
+    esac
 }
 
-# Setup Advanced (Option 3) - Placeholder
+# Setup Advanced (Option 3) - Multiple Protocols
 setup_advanced() {
-    echo -e "${YELLOW}Advanced setup with multiple protocols${NC}"
-    echo -e "${RED}Coming soon...${NC}"
+    local ip=$1
+    local regenerate=${2:-false}
+    
+    if [ "$regenerate" = false ]; then
+        echo -e "\n${YELLOW}═══ Setting up Advanced (Multiple Protocols) ═══${NC}\n"
+        
+        echo -e "This will create:"
+        echo -e "  ✓ VLESS + WebSocket (Port 443)"
+        echo -e "  ✓ VMess + WebSocket (Port 8443)"
+        echo -e "  ✓ Trojan + WebSocket (Port 2053)"
+        echo -e "  ✓ Shadowsocks (Port 2096)"
+        echo ""
+        
+        read -p "Continue? (y/n): " confirm
+        if [ "$confirm" != "y" ]; then
+            return 0
+        fi
+        
+        # Ask for config mode
+        CONFIG_MODE=$(ask_config_mode)
+    fi
+    
+    # Generate credentials
+    VLESS_UUID=$(cat /proc/sys/kernel/random/uuid)
+    VMESS_UUID=$(cat /proc/sys/kernel/random/uuid)
+    VMESS_ALTERID=0
+    TROJAN_PASS=$(openssl rand -base64 16 | tr -d '=')
+    SS_PASS=$(openssl rand -base64 16 | tr -d '=')
+    SS_METHOD="2022-blake3-aes-128-gcm"
+    
+    # Configure paths and SNI
+    if [ "$CONFIG_MODE" = "2" ] && [ "$regenerate" = false ]; then
+        # Manual mode
+        echo -e "\n${YELLOW}Manual Configuration:${NC}"
+        
+        read -p "Enter SNI/Host [default: www.speedtest.net]: " CUSTOM_SNI
+        SNI=${CUSTOM_SNI:-www.speedtest.net}
+        
+        read -p "Enter VLESS path [default: /vless]: " VLESS_PATH
+        VLESS_PATH=${VLESS_PATH:-/vless}
+        
+        read -p "Enter VMess path [default: /vmess]: " VMESS_PATH
+        VMESS_PATH=${VMESS_PATH:-/vmess}
+        
+        read -p "Enter Trojan path [default: /trojan]: " TROJAN_PATH
+        TROJAN_PATH=${TROJAN_PATH:-/trojan}
+        
+    else
+        # Auto mode
+        echo -e "\n${GREEN}Auto Mode - Using random Iranian hosts and paths${NC}"
+        SNI=$(get_random_sni)
+        VLESS_PATH=$(get_random_path)
+        VMESS_PATH=$(get_random_path)
+        TROJAN_PATH=$(get_random_path)
+        
+        # Make sure paths are different
+        while [ "$VMESS_PATH" = "$VLESS_PATH" ]; do
+            VMESS_PATH=$(get_random_path)
+        done
+        while [ "$TROJAN_PATH" = "$VLESS_PATH" ] || [ "$TROJAN_PATH" = "$VMESS_PATH" ]; do
+            TROJAN_PATH=$(get_random_path)
+        done
+    fi
+    
+    echo -e "\n${BLUE}Configuration:${NC}"
+    echo "  SNI/Host: $SNI"
+    echo "  VLESS Port: 443, Path: $VLESS_PATH"
+    echo "  VMess Port: 8443, Path: $VMESS_PATH"
+    echo "  Trojan Port: 2053, Path: $TROJAN_PATH"
+    echo "  Shadowsocks Port: 2096"
     echo ""
-    read -p "Press Enter to continue..."
+    
+    # Clear ports (only on first setup)
+    if [ "$regenerate" = false ]; then
+        echo "Clearing ports..."
+        for port in 443 8443 2053 2096; do
+            clear_port $port
+        done
+    fi
+    
+    # Delete old Advanced configs only
+    echo "Cleaning old Advanced configurations..."
+    rm -f /usr/local/etc/xray/config-advanced.json.old
+    if [ -f /usr/local/etc/xray/config-advanced.json ]; then
+        mv /usr/local/etc/xray/config-advanced.json /usr/local/etc/xray/config-advanced.json.old
+    fi
+    
+    # Create Xray config with multiple protocols
+    echo "Creating Xray configuration..."
+    mkdir -p /usr/local/etc/xray
+    cat > /usr/local/etc/xray/config-advanced.json << EOF
+{
+  "log": {"loglevel": "warning"},
+  "inbounds": [
+    {
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{"id": "$VLESS_UUID"}],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "$VLESS_PATH",
+          "headers": {"Host": "$SNI"}
+        }
+      }
+    },
+    {
+      "listen": "0.0.0.0",
+      "port": 8443,
+      "protocol": "vmess",
+      "settings": {
+        "clients": [{
+          "id": "$VMESS_UUID",
+          "alterId": $VMESS_ALTERID
+        }]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "$VMESS_PATH",
+          "headers": {"Host": "$SNI"}
+        }
+      }
+    },
+    {
+      "listen": "0.0.0.0",
+      "port": 2053,
+      "protocol": "trojan",
+      "settings": {
+        "clients": [{"password": "$TROJAN_PASS"}]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "$TROJAN_PATH",
+          "headers": {"Host": "$SNI"}
+        }
+      }
+    },
+    {
+      "listen": "0.0.0.0",
+      "port": 2096,
+      "protocol": "shadowsocks",
+      "settings": {
+        "method": "$SS_METHOD",
+        "password": "$SS_PASS",
+        "network": "tcp,udp"
+      }
+    }
+  ],
+  "outbounds": [{"protocol": "freedom"}]
+}
+EOF
+
+    # Link to main config
+    ln -sf /usr/local/etc/xray/config-advanced.json /usr/local/etc/xray/config.json
+    
+    # Configure firewall (only on first setup)
+    if [ "$regenerate" = false ]; then
+        echo "Configuring firewall..."
+        ufw --force enable >/dev/null 2>&1
+        ufw allow 22/tcp >/dev/null 2>&1
+        ufw allow 443/tcp >/dev/null 2>&1
+        ufw allow 8443/tcp >/dev/null 2>&1
+        ufw allow 2053/tcp >/dev/null 2>&1
+        ufw allow 2096/tcp >/dev/null 2>&1
+        ufw reload >/dev/null 2>&1
+    fi
+    
+    # Start/Restart Xray
+    echo "Starting Xray..."
+    systemctl enable xray >/dev/null 2>&1
+    systemctl restart xray
+    sleep 3
+    
+    if ! systemctl is-active --quiet xray; then
+        echo -e "${RED}✗ Xray failed to start${NC}"
+        journalctl -u xray -n 15 --no-pager
+        
+        # Restore old config if exists
+        if [ -f /usr/local/etc/xray/config-advanced.json.old ]; then
+            echo "Restoring previous configuration..."
+            mv /usr/local/etc/xray/config-advanced.json.old /usr/local/etc/xray/config-advanced.json
+            ln -sf /usr/local/etc/xray/config-advanced.json /usr/local/etc/xray/config.json
+            systemctl restart xray
+        fi
+        return 1
+    fi
+    
+    echo -e "${GREEN}✓ Xray is running${NC}"
+    
+    # Clean up old backup
+    rm -f /usr/local/etc/xray/config-advanced.json.old
+    
+    # Generate config links
+    VLESS_PATH_ENC=$(echo -n "$VLESS_PATH" | jq -sRr @uri)
+    VMESS_PATH_ENC=$(echo -n "$VMESS_PATH" | jq -sRr @uri)
+    TROJAN_PATH_ENC=$(echo -n "$TROJAN_PATH" | jq -sRr @uri)
+    
+    VLESS_LINK="vless://$VLESS_UUID@$ip:443?encryption=none&security=none&type=ws&host=$SNI&path=$VLESS_PATH_ENC#oneTap-VLESS"
+    
+    # VMess config (base64 encoded JSON)
+    VMESS_JSON="{\"v\":\"2\",\"ps\":\"oneTap-VMess\",\"add\":\"$ip\",\"port\":\"8443\",\"id\":\"$VMESS_UUID\",\"aid\":\"$VMESS_ALTERID\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"$SNI\",\"path\":\"$VMESS_PATH\",\"tls\":\"\"}"
+    VMESS_LINK="vmess://$(echo -n "$VMESS_JSON" | base64 -w 0)"
+    
+    TROJAN_LINK="trojan://$TROJAN_PASS@$ip:2053?security=none&type=ws&host=$SNI&path=$TROJAN_PATH_ENC#oneTap-Trojan"
+    
+    SS_LINK="ss://$(echo -n "$SS_METHOD:$SS_PASS" | base64 -w 0)@$ip:2096#oneTap-SS"
+    
+    # Create subscription (base64 of all links)
+    SUB_CONTENT=$(echo -e "$VLESS_LINK\n$VMESS_LINK\n$TROJAN_LINK\n$SS_LINK" | base64 -w 0)
+    
+    # Save config
+    cat > /root/onetap-advanced-config.txt << EOF
+╔══════════════════════════════════════╗
+║  oneTap - Advanced Multi-Protocol   ║
+╚══════════════════════════════════════╝
+
+Server IP: $ip
+SNI/Host: $SNI
+Config Mode: $([ "$CONFIG_MODE" = "2" ] && echo "Manual" || echo "Auto")
+
+═══════════════════════════════════════
+
+PROTOCOL 1: VLESS + WebSocket
+Port: 443
+UUID: $VLESS_UUID
+Path: $VLESS_PATH
+
+Link: $VLESS_LINK
+
+═══════════════════════════════════════
+
+PROTOCOL 2: VMess + WebSocket
+Port: 8443
+UUID: $VMESS_UUID
+AlterID: $VMESS_ALTERID
+Path: $VMESS_PATH
+
+Link: $VMESS_LINK
+
+═══════════════════════════════════════
+
+PROTOCOL 3: Trojan + WebSocket
+Port: 2053
+Password: $TROJAN_PASS
+Path: $TROJAN_PATH
+
+Link: $TROJAN_LINK
+
+═══════════════════════════════════════
+
+PROTOCOL 4: Shadowsocks
+Port: 2096
+Method: $SS_METHOD
+Password: $SS_PASS
+
+Link: $SS_LINK
+
+═══════════════════════════════════════
+
+SUBSCRIPTION LINK (Import all at once):
+$SUB_CONTENT
+
+To use subscription:
+1. Copy the subscription link above
+2. In v2rayNG: ⋮ → Subscription Settings → +
+3. Paste and Update
+4. All 4 configs will be imported!
+
+═══════════════════════════════════════
+
+RECOMMENDED USAGE:
+• Try VLESS first (usually fastest)
+• Use VMess if VLESS blocked
+• Use Trojan for stability
+• Use Shadowsocks as backup
+
+═══════════════════════════════════════
+EOF
+
+    # Display
+    clear
+    echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║      ✓ SETUP COMPLETE!              ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════╝${NC}\n"
+    
+    cat /root/onetap-advanced-config.txt
+    
+    echo -e "\n${YELLOW}QR CODES:${NC}\n"
+    
+    echo -e "${BLUE}VLESS:${NC}"
+    if command -v qrencode >/dev/null 2>&1; then
+        echo "$VLESS_LINK" | qrencode -t ANSIUTF8
+    fi
+    
+    echo -e "\n${BLUE}VMess:${NC}"
+    if command -v qrencode >/dev/null 2>&1; then
+        echo "$VMESS_LINK" | qrencode -t ANSIUTF8
+    fi
+    
+    echo -e "\n${GREEN}✓ Config saved to: /root/onetap-advanced-config.txt${NC}"
+    
+    # Regenerate option
+    echo -e "\n${BLUE}═══════════════════════════════════════${NC}"
+    echo -e "${YELLOW}Options:${NC}"
+    echo "  1) Test these configs"
+    echo "  2) Regenerate (new SNI + paths)"
+    echo "  3) Back to main menu"
+    echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
+    
+    read -p "Choose [1-3]: " regen_choice
+    
+    case $regen_choice in
+        1)
+            echo -e "\n${GREEN}Test the configs! Try them in order: VLESS → VMess → Trojan → SS${NC}"
+            read -p "Press Enter when ready..."
+            setup_advanced "$ip" false
+            ;;
+        2)
+            echo -e "\n${YELLOW}Regenerating all protocols...${NC}\n"
+            sleep 1
+            setup_advanced "$ip" true
+            ;;
+        3)
+            return 0
+            ;;
+        *)
+            return 0
+            ;;
+    esac
 }
 
 # Setup DNSTT (Option 4)
@@ -786,7 +1209,7 @@ setup_pingtunnel() {
     echo ""
 
     read -p "Continue with PingTunnel setup? (y/n): " confirm
-
+    
     if [ "$confirm" != "y" ]; then
         return 1
     fi
@@ -794,7 +1217,7 @@ setup_pingtunnel() {
     echo -e "\n${YELLOW}Installing PingTunnel...${NC}"
     echo "This will run the official installer from HexaSoftwareDev"
     echo ""
-
+    
     # The installer does everything automatically!
     if ! install_pingtunnel; then
         echo -e "${RED}Failed to install PingTunnel${NC}"
@@ -906,10 +1329,10 @@ EOF
     echo "  ping $ip"
     echo ""
     echo "If ping works, your ICMP tunnel is ready!"
-
+    
     echo -e "\n${YELLOW}CLIENT DOWNLOAD:${NC}"
     echo "  https://github.com/HexaSoftwareDev/PingTunnel-Client/releases"
-
+    
     echo -e "\n${YELLOW}CLIENT COMMAND:${NC}"
     echo "  pingtunnel-client $ip $PT_PORT"
 
@@ -941,12 +1364,44 @@ optimize_speed() {
 # Show configs
 show_configs() {
     clear
-    echo -e "${GREEN}═══ Your Configuration ═══${NC}\n"
+    echo -e "${GREEN}═══ Your Configurations ═══${NC}\n"
 
+    local found=false
+    
+    # Show Quick Setup config
+    if [ -f /root/onetap-quick-config.txt ]; then
+        echo -e "${BLUE}━━━ Quick Setup (Option 1) ━━━${NC}\n"
+        cat /root/onetap-quick-config.txt
+        echo ""
+        found=true
+    fi
+    
+    # Show Premium config
+    if [ -f /root/onetap-premium-config.txt ]; then
+        echo -e "${BLUE}━━━ Premium Setup (Option 2) ━━━${NC}\n"
+        cat /root/onetap-premium-config.txt
+        echo ""
+        found=true
+    fi
+    
+    # Show Advanced config
+    if [ -f /root/onetap-advanced-config.txt ]; then
+        echo -e "${BLUE}━━━ Advanced Setup (Option 3) ━━━${NC}\n"
+        cat /root/onetap-advanced-config.txt
+        echo ""
+        found=true
+    fi
+    
+    # Show other configs (backward compatibility)
     if [ -f /root/onetap-config.txt ]; then
+        echo -e "${BLUE}━━━ Other Configuration ━━━${NC}\n"
         cat /root/onetap-config.txt
-    else
-        echo -e "${YELLOW}No configuration found${NC}"
+        echo ""
+        found=true
+    fi
+    
+    if [ "$found" = false ]; then
+        echo -e "${YELLOW}No configurations found${NC}"
         echo "Please run a setup first"
     fi
 
@@ -1027,7 +1482,12 @@ main_menu() {
             setup_premium "$DOMAIN" "$IP"
             ;;
         3)
-            setup_advanced
+            if [ -z "$IP" ]; then
+                read -p "Cannot detect IP. Enter manually: " IP
+            fi
+            install_deps
+            install_xray
+            setup_advanced "$IP"
             ;;
         4)
             if [ -z "$IP" ]; then
