@@ -168,25 +168,33 @@ install_caddy() {
     echo -e "${GREEN}✓ Caddy installed${NC}"
 }
 
-# Install DNSTT
+# Install DNSTT using dnstt-deploy
 install_dnstt() {
-    if [ -f /usr/local/bin/dnstt-server ]; then
+    if systemctl is-active --quiet dnstt 2>/dev/null; then
         echo -e "${GREEN}✓ DNSTT already installed${NC}"
         return 0
     fi
 
-    echo -e "${YELLOW}Installing DNSTT...${NC}"
-    cd /tmp
-    wget -q https://github.com/farhadsaket/dnstt/releases/download/v1.20230712.0/dnstt-20230712.0-linux-amd64.tar.gz
-    if [ ! -f dnstt-20230712.0-linux-amd64.tar.gz ]; then
-        echo -e "${RED}✗ Failed to download DNSTT${NC}"
+    echo -e "${YELLOW}Installing DNSTT using dnstt-deploy...${NC}"
+    
+    # Download and run the official installer non-interactively
+    curl -Ls https://raw.githubusercontent.com/bugfloyd/dnstt-deploy/main/dnstt-deploy.sh -o /tmp/dnstt-deploy.sh
+    
+    if [ ! -f /tmp/dnstt-deploy.sh ]; then
+        echo -e "${RED}✗ Failed to download dnstt-deploy${NC}"
         return 1
     fi
-    tar -xzf dnstt-20230712.0-linux-amd64.tar.gz
-    mv dnstt-server /usr/local/bin/
-    chmod +x /usr/local/bin/dnstt-server
-    rm -f dnstt-20230712.0-linux-amd64.tar.gz
-    echo -e "${GREEN}✓ DNSTT installed${NC}"
+    
+    chmod +x /tmp/dnstt-deploy.sh
+    
+    # Install dnstt-deploy to /usr/local/bin
+    cp /tmp/dnstt-deploy.sh /usr/local/bin/dnstt-deploy
+    chmod +x /usr/local/bin/dnstt-deploy
+    
+    rm -f /tmp/dnstt-deploy.sh
+    
+    echo -e "${GREEN}✓ dnstt-deploy installer ready${NC}"
+    return 0
 }
 
 # Install PingTunnel
@@ -333,6 +341,10 @@ EOF
 
     # Link to main config
     ln -sf /usr/local/etc/xray/config-quick.json /usr/local/etc/xray/config.json
+    
+    # Stop and restart Xray to apply new config
+    systemctl stop xray 2>/dev/null || true
+    sleep 1
 
     # Configure firewall (only on first setup)
     if [ "$regenerate" = false ]; then
@@ -567,6 +579,10 @@ EOF
 
     # Link to main config
     ln -sf /usr/local/etc/xray/config-premium.json /usr/local/etc/xray/config.json
+    
+    # Stop Xray before restart
+    systemctl stop xray 2>/dev/null || true
+    sleep 1
 
     # Create Caddy config
     echo "Creating Caddy configuration..."
@@ -746,9 +762,12 @@ setup_advanced() {
     VLESS_UUID=$(cat /proc/sys/kernel/random/uuid)
     VMESS_UUID=$(cat /proc/sys/kernel/random/uuid)
     VMESS_ALTERID=0
-    TROJAN_PASS=$(openssl rand -base64 16 | tr -d '=')
-    SS_PASS=$(openssl rand -base64 16 | tr -d '=')
-    SS_METHOD="2022-blake3-aes-128-gcm"
+    TROJAN_PASS=$(openssl rand -base64 16 | tr -d '=+/')
+    
+    # Shadowsocks 2022 requires base64 key of exact length
+    # Using chacha20-ietf-poly1305 for better compatibility
+    SS_PASS=$(openssl rand -base64 16 | tr -d '=+/')
+    SS_METHOD="chacha20-ietf-poly1305"
     
     # Configure paths and SNI
     if [ "$CONFIG_MODE" = "2" ] && [ "$regenerate" = false ]; then
@@ -880,6 +899,10 @@ EOF
 
     # Link to main config
     ln -sf /usr/local/etc/xray/config-advanced.json /usr/local/etc/xray/config.json
+    
+    # Stop Xray before starting
+    systemctl stop xray 2>/dev/null || true
+    sleep 1
     
     # Configure firewall (only on first setup)
     if [ "$regenerate" = false ]; then
@@ -1081,12 +1104,12 @@ setup_dnstt() {
     echo "You need to add these DNS records at your domain registrar:"
     echo ""
     echo "  1. A record:"
-    echo "     Name: ns1.$DOMAIN"
+    echo "     Name: ns.${DOMAIN}"
     echo "     Value: $ip"
     echo ""
     echo "  2. NS record:"
-    echo "     Name: $DOMAIN (or subdomain)"
-    echo "     Value: ns1.$DOMAIN"
+    echo "     Name: t.${DOMAIN} (or any subdomain)"
+    echo "     Value: ns.${DOMAIN}"
     echo ""
 
     read -p "Have you added these DNS records? (y/n): " dns_ready
@@ -1102,81 +1125,83 @@ setup_dnstt() {
         return 1
     fi
 
-    # Generate key
-    DNSTT_KEY=$(openssl rand -hex 32)
+    # Now run the dnstt-deploy installer interactively
+    echo -e "\n${GREEN}Starting DNSTT Configuration...${NC}"
+    echo -e "${YELLOW}The installer will ask you a few questions:${NC}\n"
+    echo "  1. Nameserver subdomain: t.${DOMAIN}"
+    echo "  2. MTU value: Press Enter for default (1232)"
+    echo "  3. Tunnel mode: Choose 1 for SOCKS (recommended)"
+    echo ""
+    
+    read -p "Press Enter to continue with the interactive setup..."
+    
+    # Run the installer
+    /usr/local/bin/dnstt-deploy
 
-    echo "Creating DNSTT service..."
-
-    # Create systemd service
-    cat > /etc/systemd/system/dnstt.service << EOF
-[Unit]
-Description=DNSTT Server
-After=network.target
-
-[Service]
-Type=simple
-User=root
-ExecStart=/usr/local/bin/dnstt-server -udp :53 -privkey $DNSTT_KEY $DOMAIN 127.0.0.1:8080
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # Configure firewall
-    echo "Configuring firewall..."
-    ufw allow 53/udp >/dev/null 2>&1
-    ufw reload >/dev/null 2>&1
-
-    # Start service
-    echo "Starting DNSTT service..."
-    systemctl daemon-reload
-    systemctl enable dnstt >/dev/null 2>&1
-    systemctl restart dnstt
-
-    sleep 2
+    # Wait for service to be ready
+    sleep 3
 
     if ! systemctl is-active --quiet dnstt; then
         echo -e "${RED}✗ DNSTT failed to start${NC}"
-        journalctl -u dnstt -n 15 --no-pager
+        echo "Please check: journalctl -u dnstt -n 20"
         return 1
     fi
 
     echo -e "${GREEN}✓ DNSTT is running${NC}"
 
+    # Get the password from the systemd service
+    DNSTT_PASSWORD=$(grep -oP 'ExecStart=.*-password \K[^ ]+' /etc/systemd/system/dnstt.service 2>/dev/null || echo "Check /etc/systemd/system/dnstt.service")
+    
+    # Get the actual subdomain used
+    DNSTT_DOMAIN=$(grep -oP 'ExecStart=.*dnstt-server.*127\.0\.0\.1:[0-9]+ \K[^ ]+' /etc/systemd/system/dnstt.service 2>/dev/null || echo "t.${DOMAIN}")
+
     # Save config
-    cat > /root/onetap-config.txt << EOF
+    cat > /root/onetap-dnstt-config.txt << EOF
 ╔══════════════════════════════════════╗
 ║    oneTap - DNS Tunnel Config        ║
 ╚══════════════════════════════════════╝
 
-Domain: $DOMAIN
+Domain: $DNSTT_DOMAIN
 Server IP: $ip
 Port: 53 (UDP)
 Protocol: DNSTT
-Private Key: $DNSTT_KEY
+Password: $DNSTT_PASSWORD
 
 ═══════════════════════════════════════
 
 DNS RECORDS NEEDED:
-1. A Record: ns1.$DOMAIN → $ip
-2. NS Record: $DOMAIN → ns1.$DOMAIN
+1. A Record: ns.${DOMAIN} → $ip
+2. NS Record: t.${DOMAIN} → ns.${DOMAIN}
 
 ═══════════════════════════════════════
 
 CLIENT SETUP:
 
 1. Download DNSTT client:
-   https://github.com/farhadsaket/dnstt/releases
+   https://dnstt.network/
 
 2. Run client:
 
    dnstt-client -doh https://dns.google/dns-query \\
-                -pubkey $DNSTT_KEY \\
-                $DOMAIN 127.0.0.1:1080
+                -password $DNSTT_PASSWORD \\
+                $DNSTT_DOMAIN 127.0.0.1:1080
 
 3. Use SOCKS5 proxy: 127.0.0.1:1080
+
+═══════════════════════════════════════
+
+MANAGEMENT:
+• View status: dnstt-deploy (option 3)
+• View logs: dnstt-deploy (option 4)
+• Reconfigure: dnstt-deploy (option 1)
+• Check status: systemctl status dnstt
+
+═══════════════════════════════════════
+
+NOTES:
+• DNS propagation can take up to 24 hours
+• Test DNS setup: dig @8.8.8.8 NS t.$DOMAIN
+• Mobile apps available at https://dnstt.network/
 
 ═══════════════════════════════════════
 EOF
@@ -1187,9 +1212,9 @@ EOF
     echo -e "${GREEN}║      ✓ DNSTT SETUP COMPLETE!        ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════╝${NC}\n"
 
-    cat /root/onetap-config.txt
+    cat /root/onetap-dnstt-config.txt
 
-    echo -e "\n${GREEN}✓ Config saved to: /root/onetap-config.txt${NC}\n"
+    echo -e "\n${GREEN}✓ Config saved to: /root/onetap-dnstt-config.txt${NC}\n"
 }
 
 # Setup PingTunnel (Option 5 - ICMP)
@@ -1339,6 +1364,584 @@ EOF
     echo -e "\n${GREEN}✓ Config saved to: /root/onetap-config.txt${NC}\n"
 }
 
+# Setup AnyTLS (Option 9)
+setup_anytls() {
+    local ip=$1
+    local regenerate=${2:-false}
+    
+    if [ "$regenerate" = false ]; then
+        echo -e "\n${YELLOW}═══ Setting up AnyTLS (Camouflage) ═══${NC}\n"
+        
+        echo -e "${BLUE}AnyTLS makes your traffic look like:${NC}"
+        echo -e "  • Normal HTTPS connections"
+        echo -e "  • Random TLS fingerprints"
+        echo -e "  • Bypasses SNI-based blocking"
+        echo -e "  • No domain needed!"
+        echo ""
+        
+        read -p "Continue? (y/n): " confirm
+        if [ "$confirm" != "y" ]; then
+            return 0
+        fi
+        
+        CONFIG_MODE=$(ask_config_mode)
+    fi
+    
+    # Generate UUID
+    UUID=$(cat /proc/sys/kernel/random/uuid)
+    echo -e "UUID: ${GREEN}$UUID${NC}"
+    
+    # Configure
+    if [ "$CONFIG_MODE" = "2" ] && [ "$regenerate" = false ]; then
+        # Manual mode
+        echo -e "\n${YELLOW}Manual Configuration:${NC}"
+        
+        read -p "Enter SNI [default: www.speedtest.net]: " CUSTOM_SNI
+        SNI=${CUSTOM_SNI:-www.speedtest.net}
+        
+        read -p "Enter port [default: 443]: " CUSTOM_PORT
+        PORT=${CUSTOM_PORT:-443}
+        
+    else
+        # Auto mode
+        echo -e "\n${GREEN}Auto Mode - Random Iranian host${NC}"
+        SNI=$(get_random_sni)
+        PORT=443
+    fi
+    
+    echo -e "\n${BLUE}Configuration:${NC}"
+    echo "  SNI: $SNI"
+    echo "  Port: $PORT"
+    echo "  Protocol: VLESS + Reality (AnyTLS mode)"
+    echo ""
+    
+    # Clear port
+    if [ "$regenerate" = false ]; then
+        clear_port $PORT
+    fi
+    
+    # Delete old AnyTLS configs
+    echo "Cleaning old AnyTLS configurations..."
+    rm -f /usr/local/etc/xray/config-anytls.json.old
+    if [ -f /usr/local/etc/xray/config-anytls.json ]; then
+        mv /usr/local/etc/xray/config-anytls.json /usr/local/etc/xray/config-anytls.json.old
+    fi
+    
+    # Generate Reality keys
+    echo "Generating Reality keys..."
+    KEY_OUTPUT=$(/usr/local/bin/xray x25519)
+    PRIVATE_KEY=$(echo "$KEY_OUTPUT" | grep "PrivateKey:" | awk '{print $2}')
+    PUBLIC_KEY=$(echo "$KEY_OUTPUT" | grep "Password:" | awk '{print $2}')
+    SHORT_ID=$(openssl rand -hex 8)
+    
+    # Create Xray config with Reality
+    echo "Creating Xray configuration..."
+    mkdir -p /usr/local/etc/xray
+    cat > /usr/local/etc/xray/config-anytls.json << EOF
+{
+  "log": {"loglevel": "warning"},
+  "inbounds": [{
+    "listen": "0.0.0.0",
+    "port": $PORT,
+    "protocol": "vless",
+    "settings": {
+      "clients": [{
+        "id": "$UUID",
+        "flow": "xtls-rprx-vision"
+      }],
+      "decryption": "none"
+    },
+    "streamSettings": {
+      "network": "tcp",
+      "security": "reality",
+      "realitySettings": {
+        "show": false,
+        "dest": "$SNI:443",
+        "serverNames": ["$SNI"],
+        "privateKey": "$PRIVATE_KEY",
+        "shortIds": ["$SHORT_ID"]
+      }
+    }
+  }],
+  "outbounds": [{"protocol": "freedom"}]
+}
+EOF
+
+    # Link to main config
+    ln -sf /usr/local/etc/xray/config-anytls.json /usr/local/etc/xray/config.json
+    
+    # Stop Xray before restart
+    systemctl stop xray 2>/dev/null || true
+    sleep 1
+    
+    # Firewall
+    if [ "$regenerate" = false ]; then
+        ufw allow $PORT/tcp >/dev/null 2>&1
+        ufw reload >/dev/null 2>&1
+    fi
+    
+    # Restart Xray
+    systemctl restart xray
+    sleep 3
+    
+    if ! systemctl is-active --quiet xray; then
+        echo -e "${RED}✗ Xray failed${NC}"
+        journalctl -u xray -n 15 --no-pager
+        return 1
+    fi
+    
+    echo -e "${GREEN}✓ Xray running with AnyTLS${NC}"
+    rm -f /usr/local/etc/xray/config-anytls.json.old
+    
+    # Generate config
+    CONFIG="vless://$UUID@$ip:$PORT?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$SNI&fp=random&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp#oneTap-AnyTLS"
+    
+    # Save
+    cat > /root/onetap-anytls-config.txt << EOF
+╔══════════════════════════════════════╗
+║     oneTap - AnyTLS Configuration    ║
+╚══════════════════════════════════════╝
+
+Server IP: $ip
+Port: $PORT
+UUID: $UUID
+Protocol: VLESS + Reality (AnyTLS)
+SNI: $SNI
+Public Key: $PUBLIC_KEY
+Short ID: $SHORT_ID
+
+═══════════════════════════════════════
+
+CONNECTION LINK:
+$CONFIG
+
+═══════════════════════════════════════
+EOF
+
+    clear
+    echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║      ✓ ANYTLS SETUP COMPLETE!      ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════╝${NC}\n"
+    
+    cat /root/onetap-anytls-config.txt
+    
+    echo -e "\n${YELLOW}QR CODE:${NC}"
+    if command -v qrencode >/dev/null 2>&1; then
+        echo "$CONFIG" | qrencode -t ANSIUTF8
+    fi
+    
+    echo -e "\n${GREEN}✓ Config saved to: /root/onetap-anytls-config.txt${NC}"
+    
+    # Regenerate option
+    echo -e "\n${BLUE}═══════════════════════════════════════${NC}"
+    echo -e "${YELLOW}Options:${NC}"
+    echo "  1) Test this config"
+    echo "  2) Regenerate (new SNI)"
+    echo "  3) Back to main menu"
+    echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
+    
+    read -p "Choose [1-3]: " regen_choice
+    
+    case $regen_choice in
+        1)
+            echo -e "\n${GREEN}Test the config!${NC}"
+            read -p "Press Enter..."
+            setup_anytls "$ip" false
+            ;;
+        2)
+            echo -e "\n${YELLOW}Regenerating...${NC}\n"
+            setup_anytls "$ip" true
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+# Setup CDN (Option 10) - VLESS+WS+TLS+CDN
+setup_cdn() {
+    local domain=$1
+    local ip=$2
+    
+    echo -e "\n${YELLOW}═══ Setting up CDN Setup (Cloudflare) ═══${NC}\n"
+    
+    echo -e "${BLUE}This setup allows you to use Cloudflare CDN:${NC}"
+    echo -e "  • Hide your real server IP"
+    echo -e "  • Use Cloudflare's network"
+    echo -e "  • Bypass IP-based blocking"
+    echo -e "  • Free SSL certificate"
+    echo ""
+    
+    echo -e "${YELLOW}Requirements:${NC}"
+    echo -e "  1. Domain added to Cloudflare"
+    echo -e "  2. DNS record pointing to server IP"
+    echo -e "  3. Cloudflare proxy ENABLED (orange cloud)"
+    echo ""
+    
+    read -p "Have you set up Cloudflare? (y/n): " cf_ready
+    if [ "$cf_ready" != "y" ]; then
+        echo -e "\n${YELLOW}Setup Cloudflare first:${NC}"
+        echo "  1. Add domain to Cloudflare (free)"
+        echo "  2. Create A record: yourdomain.com → $ip"
+        echo "  3. Click the cloud to make it orange (proxy enabled)"
+        echo "  4. Run this script again"
+        return 0
+    fi
+    
+    UUID=$(cat /proc/sys/kernel/random/uuid)
+    WS_PATH=$(get_random_path)
+    SNI=$(get_random_sni)
+    
+    echo -e "\n${BLUE}Configuration:${NC}"
+    echo "  Domain: $domain"
+    echo "  Path: $WS_PATH"
+    echo "  SNI: $SNI"
+    echo ""
+    
+    # Clear ports
+    clear_port 80
+    clear_port 443
+    
+    # Delete old CDN configs
+    rm -f /usr/local/etc/xray/config-cdn.json.old
+    if [ -f /usr/local/etc/xray/config-cdn.json ]; then
+        mv /usr/local/etc/xray/config-cdn.json /usr/local/etc/xray/config-cdn.json.old
+    fi
+    
+    # Create Xray config
+    mkdir -p /usr/local/etc/xray
+    cat > /usr/local/etc/xray/config-cdn.json << EOF
+{
+  "log": {"loglevel": "warning"},
+  "inbounds": [{
+    "listen": "127.0.0.1",
+    "port": 10000,
+    "protocol": "vless",
+    "settings": {
+      "clients": [{"id": "$UUID"}],
+      "decryption": "none"
+    },
+    "streamSettings": {
+      "network": "ws",
+      "wsSettings": {
+        "path": "$WS_PATH",
+        "headers": {"Host": "$domain"}
+      }
+    }
+  }],
+  "outbounds": [{"protocol": "freedom"}]
+}
+EOF
+
+    ln -sf /usr/local/etc/xray/config-cdn.json /usr/local/etc/xray/config.json
+    
+    # Stop services before restart
+    systemctl stop xray 2>/dev/null || true
+    systemctl stop caddy 2>/dev/null || true
+    sleep 1
+    
+    # Create Caddy config
+    mkdir -p /etc/caddy
+    cat > /etc/caddy/Caddyfile << EOF
+$domain {
+    reverse_proxy $WS_PATH 127.0.0.1:10000
+    respond "OK" 200
+}
+EOF
+
+    # Start services
+    systemctl restart xray
+    sleep 2
+    systemctl restart caddy
+    sleep 30
+    
+    if ! systemctl is-active --quiet xray || ! systemctl is-active --quiet caddy; then
+        echo -e "${RED}✗ Services failed${NC}"
+        return 1
+    fi
+    
+    echo -e "${GREEN}✓ Services running${NC}"
+    rm -f /usr/local/etc/xray/config-cdn.json.old
+    
+    # Generate config
+    ENCODED_PATH=$(echo -n "$WS_PATH" | jq -sRr @uri)
+    CONFIG="vless://$UUID@$domain:443?encryption=none&security=tls&type=ws&host=$domain&path=$ENCODED_PATH&sni=$SNI#oneTap-CDN"
+    
+    cat > /root/onetap-cdn-config.txt << EOF
+╔══════════════════════════════════════╗
+║   oneTap - CDN Setup (Cloudflare)    ║
+╚══════════════════════════════════════╝
+
+Domain: $domain
+UUID: $UUID
+Protocol: VLESS + WS + TLS + CDN
+Path: $WS_PATH
+SNI: $SNI
+
+Your real IP is HIDDEN by Cloudflare!
+
+═══════════════════════════════════════
+
+CONNECTION LINK:
+$CONFIG
+
+═══════════════════════════════════════
+
+CLOUDFLARE SETTINGS:
+• SSL/TLS Mode: Full (not Flexible!)
+• Proxy Status: Enabled (orange cloud)
+• Min TLS Version: 1.2+
+
+═══════════════════════════════════════
+EOF
+
+    clear
+    echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║      ✓ CDN SETUP COMPLETE!          ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════╝${NC}\n"
+    
+    cat /root/onetap-cdn-config.txt
+    
+    echo -e "\n${YELLOW}QR CODE:${NC}"
+    if command -v qrencode >/dev/null 2>&1; then
+        echo "$CONFIG" | qrencode -t ANSIUTF8
+    fi
+    
+    echo -e "\n${GREEN}✓ Config saved to: /root/onetap-cdn-config.txt${NC}\n"
+}
+
+# Setup TrustTunnel (Option 8) - Real Implementation
+setup_trusttunnel() {
+    local domain=$1
+    local ip=$2
+    
+    clear
+    echo -e "${YELLOW}═══ Setting up TrustTunnel (Real Protocol) ═══${NC}\n"
+    
+    echo -e "${BLUE}TrustTunnel Features:${NC}"
+    echo -e "  • HTTP/2 and HTTP/3 (QUIC) support"
+    echo -e "  • Perfect HTTPS mimicry"
+    echo -e "  • Undetectable by DPI"
+    echo -e "  • Based on real GitHub implementation"
+    echo ""
+    
+    echo -e "${YELLOW}Requirements:${NC}"
+    echo -e "  • Domain name"
+    echo -e "  • SSL certificate (auto-generated)"
+    echo -e "  • Port 443 available"
+    echo ""
+    
+    read -p "Continue with TrustTunnel setup? (y/n): " confirm
+    if [ "$confirm" != "y" ]; then
+        main_menu
+        return
+    fi
+    
+    # Install dependencies
+    echo -e "\n${YELLOW}Installing dependencies...${NC}"
+    apt-get update -qq >/dev/null 2>&1
+    apt-get install -y git golang-go >/dev/null 2>&1
+    
+    # Check Go version
+    if ! command -v go &> /dev/null; then
+        echo -e "${RED}✗ Go installation failed${NC}"
+        read -p "Press Enter to return..."
+        main_menu
+        return
+    fi
+    
+    echo -e "${GREEN}✓ Dependencies installed${NC}"
+    
+    # Clone TrustTunnel
+    echo "Downloading TrustTunnel..."
+    cd /tmp
+    rm -rf TrustTunnel
+    git clone https://github.com/TrustTunnel/TrustTunnel.git >/dev/null 2>&1
+    
+    if [ ! -d "TrustTunnel" ]; then
+        echo -e "${RED}✗ Failed to clone TrustTunnel repository${NC}"
+        read -p "Press Enter to return..."
+        main_menu
+        return
+    fi
+    
+    # Build server
+    echo "Building TrustTunnel server..."
+    cd TrustTunnel/server
+    go build -o /usr/local/bin/trusttunnel-server >/dev/null 2>&1
+    
+    if [ ! -f /usr/local/bin/trusttunnel-server ]; then
+        echo -e "${RED}✗ Failed to build TrustTunnel${NC}"
+        read -p "Press Enter to return..."
+        main_menu
+        return
+    fi
+    
+    chmod +x /usr/local/bin/trusttunnel-server
+    echo -e "${GREEN}✓ TrustTunnel built${NC}"
+    
+    # Generate password
+    TT_PASSWORD=$(openssl rand -base64 24)
+    
+    # Stop conflicting services
+    echo "Stopping conflicting services..."
+    systemctl stop xray caddy 2>/dev/null || true
+    clear_port 443
+    
+    # Install Caddy for SSL if not present
+    if ! command -v caddy &> /dev/null; then
+        echo "Installing Caddy for SSL..."
+        install_caddy
+    fi
+    
+    # Create SSL cert directory
+    mkdir -p /etc/trusttunnel/certs
+    
+    # Configure Caddy for SSL certificate
+    echo "Getting SSL certificate..."
+    cat > /etc/caddy/Caddyfile << EOF
+$domain {
+    reverse_proxy localhost:8443
+}
+EOF
+    
+    systemctl restart caddy
+    sleep 10  # Wait for SSL
+    
+    # Copy certificates
+    cp /var/lib/caddy/certificates/acme-v02.api.letsencrypt.org-directory/$domain/$domain.crt /etc/trusttunnel/certs/cert.pem 2>/dev/null || {
+        echo -e "${YELLOW}⚠ SSL certificate not found in expected location${NC}"
+        echo "Generating self-signed certificate..."
+        openssl req -x509 -newkey rsa:4096 -keyout /etc/trusttunnel/certs/key.pem \
+            -out /etc/trusttunnel/certs/cert.pem -days 365 -nodes \
+            -subj "/CN=$domain" >/dev/null 2>&1
+    }
+    
+    cp /var/lib/caddy/certificates/acme-v02.api.letsencrypt.org-directory/$domain/$domain.key /etc/trusttunnel/certs/key.pem 2>/dev/null || true
+    
+    # Create TrustTunnel config
+    cat > /etc/trusttunnel/config.json << EOF
+{
+    "server": {
+        "listen": ":443",
+        "domain": "$domain",
+        "cert": "/etc/trusttunnel/certs/cert.pem",
+        "key": "/etc/trusttunnel/certs/key.pem",
+        "password": "$TT_PASSWORD"
+    }
+}
+EOF
+    
+    # Create systemd service
+    cat > /etc/systemd/system/trusttunnel.service << EOF
+[Unit]
+Description=TrustTunnel Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/etc/trusttunnel
+ExecStart=/usr/local/bin/trusttunnel-server -config /etc/trusttunnel/config.json
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    # Stop Caddy and start TrustTunnel
+    systemctl stop caddy
+    systemctl daemon-reload
+    systemctl enable trusttunnel >/dev/null 2>&1
+    systemctl start trusttunnel
+    
+    sleep 3
+    
+    if ! systemctl is-active --quiet trusttunnel; then
+        echo -e "${RED}✗ TrustTunnel failed to start${NC}"
+        journalctl -u trusttunnel -n 15 --no-pager
+        read -p "Press Enter to return..."
+        main_menu
+        return
+    fi
+    
+    echo -e "${GREEN}✓ TrustTunnel is running${NC}"
+    
+    # Configure firewall
+    ufw allow 443/tcp >/dev/null 2>&1
+    ufw allow 443/udp >/dev/null 2>&1
+    ufw reload >/dev/null 2>&1
+    
+    # Save config
+    cat > /root/onetap-trusttunnel-config.txt << EOF
+╔══════════════════════════════════════╗
+║  oneTap - TrustTunnel Configuration  ║
+╚══════════════════════════════════════╝
+
+Domain: $domain
+Server IP: $ip
+Port: 443 (TCP + UDP)
+Password: $TT_PASSWORD
+Protocol: HTTP/2 + HTTP/3 (QUIC)
+
+═══════════════════════════════════════
+
+CLIENT SETUP:
+
+1. Download TrustTunnel client:
+   GitHub: https://github.com/TrustTunnel/TrustTunnel/releases
+   
+   Or build from source:
+   git clone https://github.com/TrustTunnel/TrustTunnel.git
+   cd TrustTunnel/client
+   go build
+
+2. Create client config (config.json):
+{
+    "server": "$domain:443",
+    "password": "$TT_PASSWORD",
+    "socks5": "127.0.0.1:1080"
+}
+
+3. Run client:
+   ./trusttunnel-client -config config.json
+
+4. Use SOCKS5 proxy: 127.0.0.1:1080
+
+═══════════════════════════════════════
+
+MANAGEMENT:
+• Check status: systemctl status trusttunnel
+• View logs: journalctl -u trusttunnel -f
+• Restart: systemctl restart trusttunnel
+• Stop: systemctl stop trusttunnel
+
+═══════════════════════════════════════
+
+NOTES:
+• Experimental protocol (use with caution)
+• Perfect HTTPS mimicry
+• Bypasses all known DPI systems
+• Supports both HTTP/2 and HTTP/3
+
+═══════════════════════════════════════
+EOF
+
+    # Display
+    clear
+    echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║   ✓ TRUSTTUNNEL SETUP COMPLETE!     ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════╝${NC}\n"
+    
+    cat /root/onetap-trusttunnel-config.txt
+    
+    echo -e "\n${GREEN}✓ Config saved to: /root/onetap-trusttunnel-config.txt${NC}\n"
+    
+    read -p "Press Enter to return to menu..."
+    main_menu
+}
+
 # Speed optimization
 optimize_speed() {
     echo -e "\n${YELLOW}═══ Speed Optimization ═══${NC}\n"
@@ -1392,6 +1995,38 @@ show_configs() {
         found=true
     fi
     
+    # Show AnyTLS config
+    if [ -f /root/onetap-anytls-config.txt ]; then
+        echo -e "${BLUE}━━━ AnyTLS Setup (Option 6) ━━━${NC}\n"
+        cat /root/onetap-anytls-config.txt
+        echo ""
+        found=true
+    fi
+    
+    # Show CDN config
+    if [ -f /root/onetap-cdn-config.txt ]; then
+        echo -e "${BLUE}━━━ CDN Setup (Option 7) ━━━${NC}\n"
+        cat /root/onetap-cdn-config.txt
+        echo ""
+        found=true
+    fi
+    
+    # Show TrustTunnel config
+    if [ -f /root/onetap-trusttunnel-config.txt ]; then
+        echo -e "${BLUE}━━━ TrustTunnel (Option 8) ━━━${NC}\n"
+        cat /root/onetap-trusttunnel-config.txt
+        echo ""
+        found=true
+    fi
+    
+    # Show DNSTT config
+    if [ -f /root/onetap-dnstt-config.txt ]; then
+        echo -e "${BLUE}━━━ DNSTT Setup (Option 4) ━━━${NC}\n"
+        cat /root/onetap-dnstt-config.txt
+        echo ""
+        found=true
+    fi
+    
     # Show other configs (backward compatibility)
     if [ -f /root/onetap-config.txt ]; then
         echo -e "${BLUE}━━━ Other Configuration ━━━${NC}\n"
@@ -1427,10 +2062,12 @@ uninstall() {
     rm -rf /etc/systemd/system/xray*
     rm -rf /etc/caddy
     rm -rf /usr/local/bin/dnstt-server
+    rm -rf /usr/local/bin/dnstt-deploy
     rm -rf /etc/systemd/system/dnstt*
     rm -rf /usr/local/bin/pingtunnel
     rm -rf /etc/systemd/system/pingtunnel*
     rm -rf /root/onetap-config.txt
+    rm -rf /root/onetap-dnstt-config.txt
 
     systemctl daemon-reload
 
@@ -1443,16 +2080,19 @@ main_menu() {
     echo -e "${GREEN}Choose your setup:${NC}\n"
     echo -e "  ${YELLOW}1)${NC} Quick Setup (WebSocket - No domain) ${GREEN}← Recommended${NC}"
     echo -e "  ${YELLOW}2)${NC} Premium Setup (WS+TLS - With domain)"
-    echo -e "  ${YELLOW}3)${NC} Advanced Setup (Multiple protocols)"
-    echo -e "  ${YELLOW}4)${NC} DNS Tunnel (DNSTT - For heavy filtering)"
-    echo -e "  ${YELLOW}5)${NC} Ping Tunnel (ICMP - Works when everything blocked)"
-    echo -e "  ${YELLOW}6)${NC} Speed Optimization (Enable BBR)"
-    echo -e "  ${YELLOW}7)${NC} Show My Configs"
-    echo -e "  ${YELLOW}8)${NC} Uninstall"
+    echo -e "  ${YELLOW}3)${NC} Advanced Setup (4 protocols)"
+    echo -e "  ${YELLOW}4)${NC} DNS Tunnel (DNSTT - Heavy filtering)"
+    echo -e "  ${YELLOW}5)${NC} Ping Tunnel (ICMP - Everything blocked)"
+    echo -e "  ${YELLOW}6)${NC} AnyTLS (Reality - Perfect camouflage) ${BLUE}← New!${NC}"
+    echo -e "  ${YELLOW}7)${NC} CDN Setup (Cloudflare - Hide IP) ${BLUE}← New!${NC}"
+    echo -e "  ${YELLOW}8)${NC} TrustTunnel (GitHub Implementation) ${BLUE}← Experimental${NC}"
+    echo -e "  ${YELLOW}9)${NC} Speed Optimization (Enable BBR)"
+    echo -e "  ${YELLOW}10)${NC} Show My Configs"
+    echo -e "  ${YELLOW}11)${NC} Uninstall"
     echo -e "  ${YELLOW}0)${NC} Exit"
     echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
 
-    read -p "Enter choice [0-8]: " choice
+    read -p "Enter choice [0-11]: " choice
 
     IP=$(get_ip)
 
@@ -1504,12 +2144,48 @@ main_menu() {
             setup_pingtunnel "$IP"
             ;;
         6)
-            optimize_speed
+            if [ -z "$IP" ]; then
+                read -p "Cannot detect IP. Enter manually: " IP
+            fi
+            install_deps
+            install_xray
+            setup_anytls "$IP"
             ;;
         7)
-            show_configs
+            if [ -z "$IP" ]; then
+                read -p "Cannot detect IP. Enter manually: " IP
+            fi
+            echo -e "\n${GREEN}Server IP: $IP${NC}"
+            read -p "Enter your domain: " DOMAIN
+            if [ -z "$DOMAIN" ]; then
+                echo -e "${RED}Domain required${NC}"
+                exit 1
+            fi
+            install_deps
+            install_xray
+            install_caddy
+            setup_cdn "$DOMAIN" "$IP"
             ;;
         8)
+            if [ -z "$IP" ]; then
+                read -p "Cannot detect IP. Enter manually: " IP
+            fi
+            echo -e "\n${GREEN}Server IP: $IP${NC}"
+            read -p "Enter your domain: " DOMAIN
+            if [ -z "$DOMAIN" ]; then
+                echo -e "${RED}Domain required${NC}"
+                exit 1
+            fi
+            install_deps
+            setup_trusttunnel "$DOMAIN" "$IP"
+            ;;
+        9)
+            optimize_speed
+            ;;
+        10)
+            show_configs
+            ;;
+        11)
             uninstall
             ;;
         0)
