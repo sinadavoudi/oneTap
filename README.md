@@ -1,441 +1,318 @@
-# oneTap 
+# oneTap
 
-**Transform your VPS into a personal proxy with one command - For everyone!**
+**Transform your VPS into a personal proxy with one command - No technical knowledge needed.**
 
 [![Version](https://img.shields.io/badge/version-2.1-blue.svg)](https://github.com/sinadavoudi/oneTap)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![OS](https://img.shields.io/badge/os-Ubuntu%20%7C%20Debian-orange.svg)]()
+[![Donate with Bitcoin](https://img.shields.io)](bitcoin:bc1qcae6zaftrae0mh3vs3nwl5seyn40fjue7enxm4)
 
 ---
 
 ## 🎯 What is oneTap?
 
-**oneTap** is a simple, automated script that converts your VPS into a secure personal proxy server. Designed for users without technical knowledge, it provides multiple protocols and configuration modes to bypass internet restrictions.
+**oneTap** is a simple bash script that converts any Ubuntu/Debian VPS into a secure personal proxy server. Designed for users in restricted regions (Iran, China, Russia), it automates the entire setup process with multiple protocol options.
 
-**Perfect for:**
-- 🌍 Users facing internet censorship
-- 🔒 Those who want privacy and security
-- 💰 People seeking unlimited traffic at minimal cost
-- 🚀 Anyone who needs fast, reliable connections
-
----
-
-## ✨ Features
-
-### 🎮 Multiple Protocol Support
-
-1. **Quick Setup (TCP)** - No domain needed ⚡
-   - Fast VLESS over TCP
-   - HTTP header obfuscation
-   - Works immediately
-   - Best for beginners
-
-2. **Premium Setup (WS+TLS)** - With domain 💎
-   - VLESS + WebSocket + TLS
-   - Automatic SSL certificates
-   - Better quality and security
-   - Harder to detect
-
-3. **DNS Tunnel (DNSTT)** - For heavy filtering 🔧
-   - Works over DNS protocol (port 53)
-   - Bypasses deep packet inspection
-   - When other methods fail
-
-4. **Ping Tunnel (ICMP)** - For extreme blocking 🏓
-   - Uses ICMP (ping) packets
-   - Works when everything else is blocked
-   - Emergency backup method
-
-### 🎨 Configuration Modes
-
-- **Auto Mode** (Recommended)
-  - Random SNI, ports, and paths
-  - Optimized for Iran
-  - Quick one-click setup
-  - Security through randomization
-
-- **Manual Mode** (Advanced)
-  - Full customization
-  - Choose your own SNI, ports, paths
-  - Fine-tune for your ISP
-  - Maximum control
-
-### 🚀 Additional Features
-
-- ✅ **BBR Speed Optimization** - 2-10x faster connections
-- ✅ **QR Code Generation** - Easy mobile setup
-- ✅ **Auto Firewall Configuration** - Secure by default
-- ✅ **Iranian Host Priority** - Better compatibility in Iran
-- ✅ **Multiple SNI Options** - Random selection for security
-- ✅ **One-Command Installation** - No technical knowledge needed
+**Key Features:**
+- 🚀 One-command installation (2 minutes)
+- 🎮 8 different protocols to choose from
+- 🔍 Built-in Cloudflare Clean IP Scanner
+- 🔄 Configuration switcher (no port conflicts)
+- ⚡ Auto/Manual configuration modes
+- 🛡️ Automatic firewall & SSL setup
 
 ---
 
-## 🚀 Quick Start (1 Minute)
+## 📦 What You Get
 
-### Prerequisites
+| Protocol | Speed | Stealth | Domain? | Best For |
+|----------|-------|---------|---------|----------|
+| **VLESS+WS** | ⭐⭐⭐⭐⭐ | ⭐⭐ | ❌ | Quick start |
+| **WS+TLS** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ✅ | Secure setup |
+| **Reality** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ❌ | Perfect stealth |
+| **CDN** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ✅ | Hide IP |
+| **DNS Tunnel** | ⭐⭐⭐ | ⭐⭐⭐⭐ | ✅ | Heavy filtering |
+| **ICMP Tunnel** | ⭐⭐ | ⭐⭐⭐⭐⭐ | ❌ | Extreme blocking |
 
-- A VPS running Ubuntu 20.04+ or Debian 10+
-- Root access (or sudo privileges)
-- Port 443 available (or custom port)
+---
 
-### Installation
+## 🚀 Installation
 
-**One-line installer:**
+### One-Line Install
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/sinadavoudi/oneTap/main/onetap.sh)
 ```
 
-**Or download and run:**
+### Or Download & Run
 
 ```bash
 wget https://raw.githubusercontent.com/sinadavoudi/oneTap/main/onetap.sh
 chmod +x onetap.sh
 sudo ./onetap.sh
 ```
-
-### Main Menu
-
-```
-═══════════════════════════════════════
-Choose your setup:
-
-  1) Quick Setup (TCP - No domain) ← Recommended
-  2) Premium Setup (WS+TLS - With domain)
-  3) Advanced Setup (Multiple protocols)
-  4) DNS Tunnel (DNSTT - For heavy filtering)
-  5) Ping Tunnel (ICMP - When everything blocked)
-  6) Speed Optimization (Enable BBR)
-  7) Show My Configs
-  8) Uninstall
-  0) Exit
-═══════════════════════════════════════
-```
-
-**That's it!** Copy the config link or scan the QR code and connect.
-
 ---
 
-## 📖 Setup Options
+## 🎮 Available Options
 
-### 1️⃣ Quick Setup (Recommended)
-
-**Best for:** Beginners, no domain needed
-
-**Features:**
-- ✅ No domain required
-- ✅ Instant setup (2 minutes)
-- ✅ Auto/Manual configuration modes
-- ✅ Iranian hosts prioritized
-- ✅ QR code generation
-
-**Steps:**
-```bash
-./onetap.sh
-1 (Quick Setup)
-1 (Auto Mode) or 2 (Manual Mode)
-Copy config or scan QR code
+```
+1) Quick Setup (WebSocket)           - No domain, instant setup
+2) Premium Setup (WS+TLS)            - SSL encryption, needs domain  
+3) Advanced Setup                    - 4 protocols at once
+4) DNS Tunnel (DNSTT)                - DNS-based bypass
+5) Ping Tunnel (ICMP)                - Uses ping packets
+6) AnyTLS (Reality)                  - Perfect TLS camouflage
+7) CDN Setup (Cloudflare)            - Hide your real IP
+8) TrustTunnel                       - Experimental protocol
+9) Speed Optimization (BBR)          - 2-10x speed boost
+10) Show Configs                     - View all saved configs
+11) Switch Configuration             - Change active protocol
+12) CF Clean IP Scanner              - Find working CF IPs ⭐
+13) Uninstall                        - Remove everything
 ```
 
 ---
 
-### 2️⃣ Premium Setup (With Domain)
+## 🔧 Essential Features
 
-**Best for:** Best quality, users with domains
+### 1. CF Clean IP Scanner (Option 12)
 
-**Requirements:**
-- Domain name (free options available)
-- DNS pointed to VPS IP
-- Ports 80 and 443 open
+**Critical for CDN users in Iran/China!**
 
+Finds working Cloudflare IPs that aren't blocked in your region.
 
-**Steps:**
 ```bash
-Point domain → VPS IP
+./onetap.sh → 12
+Choose scan mode: 2 (Standard)
 Wait 5 minutes
-./onetap.sh → Option 2
-Enter domain
-Choose Auto/Manual mode
-Wait for SSL (30s)
+Copy best IP (lowest latency)
+Use in your v2ray client
 ```
+
+**Why needed?** Cloudflare's main IPs are blocked. Clean IPs work around this.
+
+### 2. Configuration Switcher (Option 11)
+
+**Prevents port conflicts when testing multiple protocols.**
+
+```bash
+./onetap.sh → 11
+Select which protocol to activate
+Services restart automatically
+```
+
+**Why needed?** Multiple setups use the same ports. This switches between them safely.
+
+### 3. Auto/Manual Modes
+
+**Auto Mode:** Random Iranian SNI, random paths, auto-configuration  
+**Manual Mode:** Full control over SNI, ports, paths
 
 ---
 
-### 4️⃣ DNS Tunnel (DNSTT)
-
-**Best for:** Heavy filtering, DNS-based bypass
-
-**Requirements:**
-- Domain with NS record access
-
-**DNS Records Needed:**
-```
-A Record:  ns1.yourdomain.com → YOUR_IP
-NS Record: yourdomain.com → ns1.yourdomain.com
-```
-
-**Client:**
-```bash
-dnstt-client -doh https://dns.google/dns-query \
-  -pubkey KEY yourdomain.com 127.0.0.1:1080
-```
-
----
-
-### 5️⃣ Ping Tunnel (ICMP)
-
-**Best for:** Extreme filtering, when everything fails
-
-**When to use:**
-- All TCP/UDP blocked
-- Only ping allowed
-- Emergency backup
-
-**Setup:**
-```bash
-./onetap.sh → Option 5
-[Automatic installation]
-
-# Client
-pingtunnel-client YOUR_IP 9090
-```
-
-**Test first:**
-```bash
-ping YOUR_IP
-```
-If ping works → tunnel works!
-
-**Client Download:**
-[PingTunnel Client](https://github.com/HexaSoftwareDev/PingTunnel-Client/releases)
-
----
-
-## 📱 Client Applications
+## 📱 Client Apps
 
 ### Android
-- [v2rayNG](https://github.com/2dust/v2rayNG/releases/latest)
-- [MahsaNG](https://github.com/GFW-knocker/MahsaNG/releases/latest) (Best for Iran)
+- [v2rayNG](https://github.com/2dust/v2rayNG/releases)
+- [MahsaNG](https://github.com/GFW-knocker/MahsaNG/releases) (Iran optimized)
 
 ### iOS
-- [Streisand](https://apps.apple.com/app/streisand/id6450534064) (Free)
-- [Shadowrocket](https://apps.apple.com/app/shadowrocket/id932747118) ($2.99)
+- [Streisand](https://apps.apple.com/app/streisand/id6450534064)
+- [Shadowrocket](https://apps.apple.com/app/shadowrocket/id932747118)
 
 ### Windows
-- [v2rayN](https://github.com/2dust/v2rayN/releases/latest)
+- [v2rayN](https://github.com/2dust/v2rayN/releases)
+- [Nekoray](https://github.com/MatsuriDayo/nekoray/releases)
 
 ### Linux/Mac
-- [v2ray-core](https://github.com/v2fly/v2ray-core/releases)
+- [Nekoray](https://github.com/MatsuriDayo/nekoray/releases)
 
 ---
 
-## 🎮 How to Connect
 
-### Mobile (v2rayNG)
+## ⚡ Performance Tips
 
-1. Install v2rayNG or MahsaNG
-2. Tap **+** → **Import from clipboard**
-3. Paste config link
-4. Connect
+### Always Do This
+```bash
+./onetap.sh → 9 (Enable BBR)
+sudo reboot
+```
+**Result:** 2-10x speed improvement
 
-**Or scan QR code:**
-- Tap **+** → **Scan QR code**
-- Scan code from oneTap
-- Connect
+### For CDN Users
+- Rescan clean IPs weekly (Option 12)
+- Save top 5 IPs as backup
+- Test different IPs for best speed
 
-### Desktop (v2rayN)
-
-1. Run v2rayN
-2. **Subscription** → **Subscription Setting**
-3. **Add** → Paste link
-4. **Update Subscription**
-5. Select server → **Enter**
+### VPS Selection
+- Closer = Faster
+- Minimum: 1 CPU, 512MB RAM
+- Recommended: 1 CPU, 1GB RAM
 
 ---
 
-## ⚡ Speed Optimization
+## 🔧 Troubleshooting
 
-### Enable BBR (Recommended)
+### Connection Not Working
 
 ```bash
-./onetap.sh
-6 (Speed Optimization)
+# Check service
+systemctl status xray
+
+# Check logs
+journalctl -u xray -n 50
+
+# Check firewall
+ufw status
+ufw allow 443/tcp
 ```
 
-**Results:**
-- Without BBR: 10 Mbps
-- With BBR: 50-100 Mbps 🚀
+### CDN Not Working in Iran
 
-**What is BBR?**
-Google's TCP congestion control algorithm for 2-10x speed improvement.
+**Did you run the IP scanner?**
+```bash
+./onetap.sh → 12
+```
 
----
+**Did you use clean IP in client?**
+- Server address: CLEAN_IP (from scanner)
+- SNI/Host: yourdomain.com (keep your domain)
 
-## 🔧 Configuration Modes
+### Slow Speed
 
-### Auto Mode (Recommended)
-
-**Iranian SNI Hosts:**
-- www.speedtest.net
-- zula.ir
-- www.digikala.com
-- www.snapp.ir
-- www.aparat.com
-- www.isna.ir
-- www.irancell.ir
-
-**Random WebSocket Paths:**
-- /ws, /api/v1, /graphql
-- /socket.io, /vless
-- /download, /update
-
-**Benefits:**
-- ✅ Different config each time
-- ✅ Harder to fingerprint
-- ✅ Security through randomization
-
-### Manual Mode
-
-**Full control over:**
-- SNI (Server Name Indication)
-- Ports (443, 8443, 2053, etc.)
-- WebSocket paths
-- Host headers
-- Fingerprints
+1. Enable BBR (Option 9)
+2. Try different protocol
+3. Rescan clean IPs (CDN users)
+4. Check VPS load: `htop`
 
 ---
 
 ## 🛡️ Security
 
-### What We Do
-- ✅ TLS/VLESS encryption
-- ✅ No logging
-- ✅ Auto firewall config
-- ✅ Personal server (only you)
-- ✅ Open source
+**What the script does:**
+- ✅ Configures UFW firewall
+- ✅ Generates unique UUIDs/passwords
+- ✅ Sets up SSL certificates (for TLS options)
+- ✅ No logging enabled
+- ✅ Runs as systemd services
 
-### What We Don't Do
-- ❌ No data collection
-- ❌ No backdoors
-- ❌ No third parties
-- ❌ No traffic limits
-
-### Best Practices
-1. Use strong SSH passwords
-2. Enable SSH key auth
-3. Keep system updated
-4. Don't share configs
-5. Monitor usage
+**Best practices:**
+- Change SSH port from 22
+- Use SSH keys instead of passwords
+- Keep system updated: `apt update && apt upgrade`
+- Don't share configs publicly
 
 ---
 
-## 🔍 Troubleshooting
+## 📖 Documentation
 
-### Can't Connect
+### Domain Setup (Options 2, 4, 7)
 
-**Check:**
-```bash
-# Service status
-systemctl status xray
-
-# Logs
-journalctl -u xray -f
-
-# Firewall
-ufw status
-
-# Port availability
-lsof -i :443
+**Basic DNS:**
+```
+Type: A
+Name: @ (or yourdomain.com)
+Value: YOUR_VPS_IP
 ```
 
-### Slow Speed
+**For DNSTT (Option 4):**
+```
+A Record:  ns.yourdomain.com → YOUR_VPS_IP
+NS Record: t.yourdomain.com → ns.yourdomain.com
+```
 
-**Solutions:**
-1. Enable BBR (option 6)
-2. Try different VPS
-3. Use Premium setup
-4. Test different SNI
-5. Check VPS load: `htop`
+**For CDN (Option 7):**
+1. Add domain to Cloudflare (free)
+2. Create A record
+3. Enable proxy (orange cloud)
+4. Set SSL/TLS to "Full"
 
-### Premium Setup Fails
+### Management Commands
 
-**Common issues:**
-1. DNS not propagated → Wait 10 min
-2. Ports busy → `systemctl stop nginx apache2`
-3. Wrong domain → Check DNS: `dig yourdomain.com`
+```bash
+# View configs
+./onetap.sh → 10
+
+# Switch protocols
+./onetap.sh → 11
+
+# Check service
+systemctl status xray
+
+# View logs
+journalctl -u xray -f
+
+# Restart
+systemctl restart xray
+```
 
 ---
 
-## 📊 Comparison
+## 🆕 What's New in v2.1
 
-| Feature | oneTap | X-UI | Manual Setup |
-|---------|--------|------|--------------|
-| Setup Time | 1 min | 10 min | 30+ min |
-| Knowledge | None | Medium | Advanced |
-| Protocols | 5 | 10+ | All |
-| Auto Mode | ✅ | ❌ | ❌ |
-| QR Codes | ✅ | ✅ | ❌ |
-| BBR | ✅ | ✅ | Manual |
+- ✅ **CF Clean IP Scanner** - Find working Cloudflare IPs
+- ✅ **Configuration Switcher** - No more port conflicts
+- ✅ **Reality Protocol** - Perfect HTTPS camouflage
+- ✅ **CDN Integration** - Hide IP with Cloudflare
+- ✅ **Fixed DNSTT** - Now uses official dnstt-deploy
+- ✅ **Fixed Caddy** - Auto-creates service user
+- ✅ **Better error handling** - Clear error messages
+- ✅ **Auto/Manual modes** - Choose complexity level
 
 ---
 
 ## 🤝 Contributing
 
-**Ways to help:**
-- 🐛 Report bugs
-- 💡 Suggest features
-- 📖 Improve docs
-- 🧪 Test on different systems
-- ⭐ Star the repo
+Contributions welcome! 
 
-**Code contributions:**
-1. Fork repo
-2. Create branch: `git checkout -b feature/name`
-3. Commit: `git commit -m 'Add feature'`
-4. Push: `git push origin feature/name`
-5. Open Pull Request
+- 🐛 Report bugs via [Issues](https://github.com/sinadavoudi/oneTap/issues)
+- 💡 Suggest features via [Discussions](https://github.com/sinadavoudi/oneTap/discussions)
+- 📖 Improve documentation
+- ⭐ Star the repo if it helped you!
 
 ---
 
 ## 📜 License
 
-MIT License - See [LICENSE](LICENSE) file
+MIT License - See [LICENSE](LICENSE)
 
 ---
 
-## 🙏 Acknowledgments
+## 🙏 Credits
 
 Built with:
-- [Xray-core](https://github.com/XTLS/Xray-core)
-- [Caddy](https://caddyserver.com/)
-- [DNSTT](https://github.com/farhadsaket/dnstt)
-- [PingTunnel](https://github.com/HexaSoftwareDev/PingTunnel-Server)
-
-Thanks to:
-- All contributors
-- Iranian tech community
-- Everyone fighting for internet freedom
+- [Xray-core](https://github.com/XTLS/Xray-core) - Proxy engine
+- [Caddy](https://caddyserver.com/) - Web server
+- [dnstt-deploy](https://github.com/bugfloyd/dnstt-deploy) - DNS tunnel
+- [PingTunnel](https://github.com/HexaSoftwareDev/PingTunnel-Server) - ICMP tunnel
 
 ---
 
-## 📞 Support
+## ⚠️ Disclaimer
 
+This tool is for:
+- ✅ Accessing information freely
+- ✅ Privacy and security
+- ✅ Bypassing censorship
+- ✅ Educational purposes
+
+Not for:
+- ❌ Illegal activities
+- ❌ Violating terms of service
+- ❌ Harmful actions
+
+Use responsibly and respect local laws.
+
+---
+
+## 💬 Support
+
+- **Documentation:** This README + in-script help
 - **Issues:** [GitHub Issues](https://github.com/sinadavoudi/oneTap/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/sinadavoudi/oneTap/discussions)
 
 ---
 
-## ⭐ Show Your Support
+**Made with ❤️ for internet freedom**
 
-If oneTap helped you:
-- ⭐ Star this repo
-- 🔄 Share with friends
-- 🐛 Report bugs
-- 💡 Suggest features
-
----
-
-**Made with ❤️ for free internet access**
-
-*Information freedom is everyone's right*
+*If this helped you bypass restrictions, please ⭐ star the repo!*
