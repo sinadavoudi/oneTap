@@ -158,14 +158,76 @@ install_caddy() {
     fi
 
     echo -e "${YELLOW}Installing Caddy...${NC}"
-    apt install -y debian-keyring debian-archive-keyring apt-transport-https >/dev/null 2>&1
+
+    # Update package lists first
+    apt update -qq 2>&1 | grep -i error && echo "Warning: apt update had issues"
+
+    # Install prerequisites
+    apt install -y debian-keyring debian-archive-keyring apt-transport-https curl 2>&1 | grep -i "error\|failed" && echo "Warning: prerequisite installation issues"
+
+    # Add Caddy repository
+    echo "Adding Caddy repository..."
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' 2>/dev/null | \
         gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
+
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' 2>/dev/null | \
         tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-    apt update -qq >/dev/null 2>&1
-    apt install caddy -y >/dev/null 2>&1
-    echo -e "${GREEN}✓ Caddy installed${NC}"
+
+    # Update with new repository
+    echo "Updating package lists..."
+    apt update -qq 2>&1 | grep -i error && echo "Warning: apt update had issues"
+
+    # Install Caddy
+    echo "Installing Caddy package..."
+    apt install caddy -y 2>&1 | tee /tmp/caddy-install.log | grep -i "error\|failed"
+
+    # Wait a moment for installation to complete
+    sleep 2
+
+    # Verify installation
+    if command -v caddy >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Caddy installed successfully${NC}"
+        # Ensure caddy user exists
+        if ! id -u caddy >/dev/null 2>&1; then
+            echo "Creating caddy user..."
+            useradd --system --home /var/lib/caddy --shell /usr/sbin/nologin caddy
+        fi
+        # Clean up
+        rm -f /tmp/caddy-install.log
+        return 0
+    else
+        echo -e "${RED}✗ Caddy installation failed${NC}"
+        echo "Installation log:"
+        cat /tmp/caddy-install.log 2>/dev/null
+        echo ""
+        echo "Trying alternative installation method..."
+
+        # Alternative: Direct download and install
+        cd /tmp
+        CADDY_VERSION="2.7.6"
+        wget -q "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.deb" -O caddy.deb
+
+        if [ -f caddy.deb ]; then
+            dpkg -i caddy.deb 2>&1 | grep -i "error\|failed"
+            rm -f caddy.deb
+
+            if command -v caddy >/dev/null 2>&1; then
+                echo -e "${GREEN}✓ Caddy installed via direct download${NC}"
+                # Ensure caddy user exists
+                if ! id -u caddy >/dev/null 2>&1; then
+                    echo "Creating caddy user..."
+                    useradd --system --home /var/lib/caddy --shell /usr/sbin/nologin caddy
+                fi
+                return 0
+            fi
+        fi
+
+        echo -e "${RED}✗ All installation methods failed${NC}"
+        echo "Please install manually:"
+        echo "  wget https://github.com/caddyserver/caddy/releases/download/v2.7.6/caddy_2.7.6_linux_amd64.deb"
+        echo "  dpkg -i caddy_2.7.6_linux_amd64.deb"
+        return 1
+    fi
 }
 
 # Install DNSTT using dnstt-deploy
@@ -176,23 +238,23 @@ install_dnstt() {
     fi
 
     echo -e "${YELLOW}Installing DNSTT using dnstt-deploy...${NC}"
-    
+
     # Download and run the official installer non-interactively
     curl -Ls https://raw.githubusercontent.com/bugfloyd/dnstt-deploy/main/dnstt-deploy.sh -o /tmp/dnstt-deploy.sh
-    
+
     if [ ! -f /tmp/dnstt-deploy.sh ]; then
         echo -e "${RED}✗ Failed to download dnstt-deploy${NC}"
         return 1
     fi
-    
+
     chmod +x /tmp/dnstt-deploy.sh
-    
+
     # Install dnstt-deploy to /usr/local/bin
     cp /tmp/dnstt-deploy.sh /usr/local/bin/dnstt-deploy
     chmod +x /usr/local/bin/dnstt-deploy
-    
+
     rm -f /tmp/dnstt-deploy.sh
-    
+
     echo -e "${GREEN}✓ dnstt-deploy installer ready${NC}"
     return 0
 }
@@ -205,20 +267,20 @@ install_pingtunnel() {
     fi
 
     echo -e "${YELLOW}Installing PingTunnel using official installer...${NC}"
-    
+
     cd /tmp
     curl -fsSL https://raw.githubusercontent.com/HexaSoftwareDev/PingTunnel-Server/main/installer.sh -o installer.sh
-    
+
     if [ ! -f installer.sh ]; then
         echo -e "${RED}✗ Failed to download installer${NC}"
         return 1
     fi
-    
+
     # Run the installer (it handles everything automatically)
     bash installer.sh
-    
+
     rm -f installer.sh
-    
+
     echo -e "${GREEN}✓ PingTunnel installed${NC}"
 }
 
@@ -250,7 +312,7 @@ ask_config_mode() {
     echo -e "     - Full control"
     echo -e "     - For experienced users\n"
     echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
-    
+
     read -p "Choose mode (1=Auto / 2=Manual): " mode
     echo "$mode"
 }
@@ -262,11 +324,11 @@ setup_reality() {
 
     if [ "$regenerate" = false ]; then
         echo -e "\n${YELLOW}═══ Setting up Quick Setup (WebSocket) ═══${NC}\n"
-        
+
         # Ask for config mode only on first setup
         CONFIG_MODE=$(ask_config_mode)
     fi
-    
+
     # Generate UUID (new each time)
     UUID=$(cat /proc/sys/kernel/random/uuid)
     echo -e "UUID: ${GREEN}$UUID${NC}"
@@ -275,23 +337,23 @@ setup_reality() {
     if [ "$CONFIG_MODE" = "2" ] && [ "$regenerate" = false ]; then
         # Manual mode
         echo -e "\n${YELLOW}Manual Configuration:${NC}"
-        
+
         read -p "Enter SNI/Host (e.g., www.digikala.com) [default: www.speedtest.net]: " CUSTOM_SNI
         SNI=${CUSTOM_SNI:-www.speedtest.net}
-        
+
         read -p "Enter port [default: 443]: " CUSTOM_PORT
         PORT=${CUSTOM_PORT:-443}
-        
+
         read -p "Enter WebSocket path [default: /ws]: " CUSTOM_PATH
         WS_PATH=${CUSTOM_PATH:-/ws}
-        
+
     else
         # Auto mode - Random Iranian host and path
         SNI=$(get_random_sni)
         PORT=443
         WS_PATH=$(get_random_path)
     fi
-    
+
     echo -e "\n${BLUE}Configuration:${NC}"
     echo "  Host/SNI: $SNI"
     echo "  Port: $PORT"
@@ -341,7 +403,7 @@ EOF
 
     # Link to main config
     ln -sf /usr/local/etc/xray/config-quick.json /usr/local/etc/xray/config.json
-    
+
     # Stop and restart Xray to apply new config
     systemctl stop xray 2>/dev/null || true
     sleep 1
@@ -363,7 +425,7 @@ EOF
     if ! systemctl is-active --quiet xray; then
         echo -e "${RED}✗ Xray failed to start${NC}"
         journalctl -u xray -n 15 --no-pager
-        
+
         # Restore old config if exists
         if [ -f /usr/local/etc/xray/config-quick.json.old ]; then
             echo "Restoring previous configuration..."
@@ -375,7 +437,7 @@ EOF
     fi
 
     echo -e "${GREEN}✓ Xray is running${NC}"
-    
+
     # Clean up old backup
     rm -f /usr/local/etc/xray/config-quick.json.old
 
@@ -428,7 +490,7 @@ EOF
     echo "  Windows: v2rayN"
 
     echo -e "\n${GREEN}✓ Config saved to: /root/onetap-quick-config.txt${NC}"
-    
+
     # Regenerate option
     echo -e "\n${BLUE}═══════════════════════════════════════${NC}"
     echo -e "${YELLOW}Options:${NC}"
@@ -436,9 +498,9 @@ EOF
     echo "  2) Regenerate (new host + path)"
     echo "  3) Back to main menu"
     echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
-    
+
     read -p "Choose [1-3]: " regen_choice
-    
+
     case $regen_choice in
         1)
             echo -e "\n${GREEN}Test the config in your app!${NC}"
@@ -469,7 +531,7 @@ setup_premium() {
 
     if [ "$regenerate" = false ]; then
         echo -e "\n${YELLOW}═══ Setting up Premium (WS+TLS) ═══${NC}\n"
-        
+
         # Ask for config mode only on first setup
         CONFIG_MODE=$(ask_config_mode)
     fi
@@ -482,38 +544,38 @@ setup_premium() {
     if [ "$CONFIG_MODE" = "2" ] && [ "$regenerate" = false ]; then
         # Manual mode
         echo -e "\n${YELLOW}Manual Configuration:${NC}"
-        
+
         echo -e "\n${BLUE}SNI/Host Options:${NC}"
         echo "  1) Use domain as SNI ($domain)"
         echo "  2) Use random Iranian host"
         read -p "Choose SNI option [1-2]: " sni_choice
-        
+
         if [ "$sni_choice" = "2" ]; then
             SNI=$(get_random_sni)
             echo "Selected SNI: $SNI"
         else
             SNI=$domain
         fi
-        
+
         read -p "Enter WebSocket path [default: /ws]: " CUSTOM_PATH
         WS_PATH=${CUSTOM_PATH:-/ws}
-        
+
         read -p "Enter port [default: 443]: " CUSTOM_PORT
         PORT=${CUSTOM_PORT:-443}
-        
+
         WS_HOST=$domain
-        
+
     else
         # Auto mode - Use Iranian host by default
         echo -e "\n${GREEN}Auto Mode - Using optimized settings${NC}"
         echo -e "${YELLOW}Using random Iranian host for better compatibility${NC}"
-        
+
         SNI=$(get_random_sni)
         WS_PATH=$(get_random_path)
         PORT=443
         WS_HOST=$domain
     fi
-    
+
     echo -e "\n${BLUE}Configuration:${NC}"
     echo "  Domain: $domain"
     echo "  SNI: $SNI"
@@ -579,7 +641,7 @@ EOF
 
     # Link to main config
     ln -sf /usr/local/etc/xray/config-premium.json /usr/local/etc/xray/config.json
-    
+
     # Stop Xray before restart
     systemctl stop xray 2>/dev/null || true
     sleep 1
@@ -604,7 +666,7 @@ EOF
         if ! systemctl is-active --quiet xray; then
             echo -e "${RED}✗ Xray failed${NC}"
             journalctl -u xray -n 10 --no-pager
-            
+
             # Restore old config if exists
             if [ -f /usr/local/etc/xray/config-premium.json.old ]; then
                 echo "Restoring previous configuration..."
@@ -615,6 +677,35 @@ EOF
             return 1
         fi
         echo -e "${GREEN}✓ Xray running${NC}"
+
+        # Fix Caddy systemd service file to run as root
+        echo "Configuring Caddy service..."
+        cat > /etc/systemd/system/caddy.service << 'EOFSERVICE'
+[Unit]
+Description=Caddy Web Server
+Documentation=https://caddyserver.com/docs/
+After=network.target network-online.target
+Requires=network-online.target
+
+[Service]
+Type=notify
+User=root
+Group=root
+ExecStart=/usr/bin/caddy run --environ --config /etc/caddy/Caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/caddy/Caddyfile --force
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+LimitNPROC=512
+PrivateTmp=true
+ProtectSystem=full
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+EOFSERVICE
+
+        # Reload systemd
+        systemctl daemon-reload
 
         # Start Caddy
         echo "Starting Caddy (getting SSL certificate)..."
@@ -701,7 +792,7 @@ EOF
     echo "  Windows: v2rayN"
 
     echo -e "\n${GREEN}✓ Config saved to: /root/onetap-premium-config.txt${NC}"
-    
+
     # Regenerate option
     echo -e "\n${BLUE}═══════════════════════════════════════${NC}"
     echo -e "${YELLOW}Options:${NC}"
@@ -709,9 +800,9 @@ EOF
     echo "  2) Regenerate (new SNI + path)"
     echo "  3) Back to main menu"
     echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
-    
+
     read -p "Choose [1-3]: " regen_choice
-    
+
     case $regen_choice in
         1)
             echo -e "\n${GREEN}Test the config in your app!${NC}"
@@ -738,54 +829,54 @@ EOF
 setup_advanced() {
     local ip=$1
     local regenerate=${2:-false}
-    
+
     if [ "$regenerate" = false ]; then
         echo -e "\n${YELLOW}═══ Setting up Advanced (Multiple Protocols) ═══${NC}\n"
-        
+
         echo -e "This will create:"
         echo -e "  ✓ VLESS + WebSocket (Port 443)"
         echo -e "  ✓ VMess + WebSocket (Port 8443)"
         echo -e "  ✓ Trojan + WebSocket (Port 2053)"
         echo -e "  ✓ Shadowsocks (Port 2096)"
         echo ""
-        
+
         read -p "Continue? (y/n): " confirm
         if [ "$confirm" != "y" ]; then
             return 0
         fi
-        
+
         # Ask for config mode
         CONFIG_MODE=$(ask_config_mode)
     fi
-    
+
     # Generate credentials
     VLESS_UUID=$(cat /proc/sys/kernel/random/uuid)
     VMESS_UUID=$(cat /proc/sys/kernel/random/uuid)
     VMESS_ALTERID=0
     TROJAN_PASS=$(openssl rand -base64 16 | tr -d '=+/')
-    
+
     # Shadowsocks 2022 requires base64 key of exact length
     # Using chacha20-ietf-poly1305 for better compatibility
     SS_PASS=$(openssl rand -base64 16 | tr -d '=+/')
     SS_METHOD="chacha20-ietf-poly1305"
-    
+
     # Configure paths and SNI
     if [ "$CONFIG_MODE" = "2" ] && [ "$regenerate" = false ]; then
         # Manual mode
         echo -e "\n${YELLOW}Manual Configuration:${NC}"
-        
+
         read -p "Enter SNI/Host [default: www.speedtest.net]: " CUSTOM_SNI
         SNI=${CUSTOM_SNI:-www.speedtest.net}
-        
+
         read -p "Enter VLESS path [default: /vless]: " VLESS_PATH
         VLESS_PATH=${VLESS_PATH:-/vless}
-        
+
         read -p "Enter VMess path [default: /vmess]: " VMESS_PATH
         VMESS_PATH=${VMESS_PATH:-/vmess}
-        
+
         read -p "Enter Trojan path [default: /trojan]: " TROJAN_PATH
         TROJAN_PATH=${TROJAN_PATH:-/trojan}
-        
+
     else
         # Auto mode
         echo -e "\n${GREEN}Auto Mode - Using random Iranian hosts and paths${NC}"
@@ -793,7 +884,7 @@ setup_advanced() {
         VLESS_PATH=$(get_random_path)
         VMESS_PATH=$(get_random_path)
         TROJAN_PATH=$(get_random_path)
-        
+
         # Make sure paths are different
         while [ "$VMESS_PATH" = "$VLESS_PATH" ]; do
             VMESS_PATH=$(get_random_path)
@@ -802,7 +893,7 @@ setup_advanced() {
             TROJAN_PATH=$(get_random_path)
         done
     fi
-    
+
     echo -e "\n${BLUE}Configuration:${NC}"
     echo "  SNI/Host: $SNI"
     echo "  VLESS Port: 443, Path: $VLESS_PATH"
@@ -810,7 +901,7 @@ setup_advanced() {
     echo "  Trojan Port: 2053, Path: $TROJAN_PATH"
     echo "  Shadowsocks Port: 2096"
     echo ""
-    
+
     # Clear ports (only on first setup)
     if [ "$regenerate" = false ]; then
         echo "Clearing ports..."
@@ -818,14 +909,14 @@ setup_advanced() {
             clear_port $port
         done
     fi
-    
+
     # Delete old Advanced configs only
     echo "Cleaning old Advanced configurations..."
     rm -f /usr/local/etc/xray/config-advanced.json.old
     if [ -f /usr/local/etc/xray/config-advanced.json ]; then
         mv /usr/local/etc/xray/config-advanced.json /usr/local/etc/xray/config-advanced.json.old
     fi
-    
+
     # Create Xray config with multiple protocols
     echo "Creating Xray configuration..."
     mkdir -p /usr/local/etc/xray
@@ -899,11 +990,11 @@ EOF
 
     # Link to main config
     ln -sf /usr/local/etc/xray/config-advanced.json /usr/local/etc/xray/config.json
-    
+
     # Stop Xray before starting
     systemctl stop xray 2>/dev/null || true
     sleep 1
-    
+
     # Configure firewall (only on first setup)
     if [ "$regenerate" = false ]; then
         echo "Configuring firewall..."
@@ -915,17 +1006,17 @@ EOF
         ufw allow 2096/tcp >/dev/null 2>&1
         ufw reload >/dev/null 2>&1
     fi
-    
+
     # Start/Restart Xray
     echo "Starting Xray..."
     systemctl enable xray >/dev/null 2>&1
     systemctl restart xray
     sleep 3
-    
+
     if ! systemctl is-active --quiet xray; then
         echo -e "${RED}✗ Xray failed to start${NC}"
         journalctl -u xray -n 15 --no-pager
-        
+
         # Restore old config if exists
         if [ -f /usr/local/etc/xray/config-advanced.json.old ]; then
             echo "Restoring previous configuration..."
@@ -935,30 +1026,30 @@ EOF
         fi
         return 1
     fi
-    
+
     echo -e "${GREEN}✓ Xray is running${NC}"
-    
+
     # Clean up old backup
     rm -f /usr/local/etc/xray/config-advanced.json.old
-    
+
     # Generate config links
     VLESS_PATH_ENC=$(echo -n "$VLESS_PATH" | jq -sRr @uri)
     VMESS_PATH_ENC=$(echo -n "$VMESS_PATH" | jq -sRr @uri)
     TROJAN_PATH_ENC=$(echo -n "$TROJAN_PATH" | jq -sRr @uri)
-    
+
     VLESS_LINK="vless://$VLESS_UUID@$ip:443?encryption=none&security=none&type=ws&host=$SNI&path=$VLESS_PATH_ENC#oneTap-VLESS"
-    
+
     # VMess config (base64 encoded JSON)
     VMESS_JSON="{\"v\":\"2\",\"ps\":\"oneTap-VMess\",\"add\":\"$ip\",\"port\":\"8443\",\"id\":\"$VMESS_UUID\",\"aid\":\"$VMESS_ALTERID\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"$SNI\",\"path\":\"$VMESS_PATH\",\"tls\":\"\"}"
     VMESS_LINK="vmess://$(echo -n "$VMESS_JSON" | base64 -w 0)"
-    
+
     TROJAN_LINK="trojan://$TROJAN_PASS@$ip:2053?security=none&type=ws&host=$SNI&path=$TROJAN_PATH_ENC#oneTap-Trojan"
-    
+
     SS_LINK="ss://$(echo -n "$SS_METHOD:$SS_PASS" | base64 -w 0)@$ip:2096#oneTap-SS"
-    
+
     # Create subscription (base64 of all links)
     SUB_CONTENT=$(echo -e "$VLESS_LINK\n$VMESS_LINK\n$TROJAN_LINK\n$SS_LINK" | base64 -w 0)
-    
+
     # Save config
     cat > /root/onetap-advanced-config.txt << EOF
 ╔══════════════════════════════════════╗
@@ -1033,23 +1124,23 @@ EOF
     echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║      ✓ SETUP COMPLETE!              ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════╝${NC}\n"
-    
+
     cat /root/onetap-advanced-config.txt
-    
+
     echo -e "\n${YELLOW}QR CODES:${NC}\n"
-    
+
     echo -e "${BLUE}VLESS:${NC}"
     if command -v qrencode >/dev/null 2>&1; then
         echo "$VLESS_LINK" | qrencode -t ANSIUTF8
     fi
-    
+
     echo -e "\n${BLUE}VMess:${NC}"
     if command -v qrencode >/dev/null 2>&1; then
         echo "$VMESS_LINK" | qrencode -t ANSIUTF8
     fi
-    
+
     echo -e "\n${GREEN}✓ Config saved to: /root/onetap-advanced-config.txt${NC}"
-    
+
     # Regenerate option
     echo -e "\n${BLUE}═══════════════════════════════════════${NC}"
     echo -e "${YELLOW}Options:${NC}"
@@ -1057,9 +1148,9 @@ EOF
     echo "  2) Regenerate (new SNI + paths)"
     echo "  3) Back to main menu"
     echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
-    
+
     read -p "Choose [1-3]: " regen_choice
-    
+
     case $regen_choice in
         1)
             echo -e "\n${GREEN}Test the configs! Try them in order: VLESS → VMess → Trojan → SS${NC}"
@@ -1132,9 +1223,9 @@ setup_dnstt() {
     echo "  2. MTU value: Press Enter for default (1232)"
     echo "  3. Tunnel mode: Choose 1 for SOCKS (recommended)"
     echo ""
-    
+
     read -p "Press Enter to continue with the interactive setup..."
-    
+
     # Run the installer
     /usr/local/bin/dnstt-deploy
 
@@ -1151,7 +1242,7 @@ setup_dnstt() {
 
     # Get the password from the systemd service
     DNSTT_PASSWORD=$(grep -oP 'ExecStart=.*-password \K[^ ]+' /etc/systemd/system/dnstt.service 2>/dev/null || echo "Check /etc/systemd/system/dnstt.service")
-    
+
     # Get the actual subdomain used
     DNSTT_DOMAIN=$(grep -oP 'ExecStart=.*dnstt-server.*127\.0\.0\.1:[0-9]+ \K[^ ]+' /etc/systemd/system/dnstt.service 2>/dev/null || echo "t.${DOMAIN}")
 
@@ -1234,7 +1325,7 @@ setup_pingtunnel() {
     echo ""
 
     read -p "Continue with PingTunnel setup? (y/n): " confirm
-    
+
     if [ "$confirm" != "y" ]; then
         return 1
     fi
@@ -1242,7 +1333,7 @@ setup_pingtunnel() {
     echo -e "\n${YELLOW}Installing PingTunnel...${NC}"
     echo "This will run the official installer from HexaSoftwareDev"
     echo ""
-    
+
     # The installer does everything automatically!
     if ! install_pingtunnel; then
         echo -e "${RED}Failed to install PingTunnel${NC}"
@@ -1354,10 +1445,10 @@ EOF
     echo "  ping $ip"
     echo ""
     echo "If ping works, your ICMP tunnel is ready!"
-    
+
     echo -e "\n${YELLOW}CLIENT DOWNLOAD:${NC}"
     echo "  https://github.com/HexaSoftwareDev/PingTunnel-Client/releases"
-    
+
     echo -e "\n${YELLOW}CLIENT COMMAND:${NC}"
     echo "  pingtunnel-client $ip $PT_PORT"
 
@@ -1368,72 +1459,72 @@ EOF
 setup_anytls() {
     local ip=$1
     local regenerate=${2:-false}
-    
+
     if [ "$regenerate" = false ]; then
         echo -e "\n${YELLOW}═══ Setting up AnyTLS (Camouflage) ═══${NC}\n"
-        
+
         echo -e "${BLUE}AnyTLS makes your traffic look like:${NC}"
         echo -e "  • Normal HTTPS connections"
         echo -e "  • Random TLS fingerprints"
         echo -e "  • Bypasses SNI-based blocking"
         echo -e "  • No domain needed!"
         echo ""
-        
+
         read -p "Continue? (y/n): " confirm
         if [ "$confirm" != "y" ]; then
             return 0
         fi
-        
+
         CONFIG_MODE=$(ask_config_mode)
     fi
-    
+
     # Generate UUID
     UUID=$(cat /proc/sys/kernel/random/uuid)
     echo -e "UUID: ${GREEN}$UUID${NC}"
-    
+
     # Configure
     if [ "$CONFIG_MODE" = "2" ] && [ "$regenerate" = false ]; then
         # Manual mode
         echo -e "\n${YELLOW}Manual Configuration:${NC}"
-        
+
         read -p "Enter SNI [default: www.speedtest.net]: " CUSTOM_SNI
         SNI=${CUSTOM_SNI:-www.speedtest.net}
-        
+
         read -p "Enter port [default: 443]: " CUSTOM_PORT
         PORT=${CUSTOM_PORT:-443}
-        
+
     else
         # Auto mode
         echo -e "\n${GREEN}Auto Mode - Random Iranian host${NC}"
         SNI=$(get_random_sni)
         PORT=443
     fi
-    
+
     echo -e "\n${BLUE}Configuration:${NC}"
     echo "  SNI: $SNI"
     echo "  Port: $PORT"
     echo "  Protocol: VLESS + Reality (AnyTLS mode)"
     echo ""
-    
+
     # Clear port
     if [ "$regenerate" = false ]; then
         clear_port $PORT
     fi
-    
+
     # Delete old AnyTLS configs
     echo "Cleaning old AnyTLS configurations..."
     rm -f /usr/local/etc/xray/config-anytls.json.old
     if [ -f /usr/local/etc/xray/config-anytls.json ]; then
         mv /usr/local/etc/xray/config-anytls.json /usr/local/etc/xray/config-anytls.json.old
     fi
-    
+
     # Generate Reality keys
     echo "Generating Reality keys..."
     KEY_OUTPUT=$(/usr/local/bin/xray x25519)
     PRIVATE_KEY=$(echo "$KEY_OUTPUT" | grep "PrivateKey:" | awk '{print $2}')
     PUBLIC_KEY=$(echo "$KEY_OUTPUT" | grep "Password:" | awk '{print $2}')
     SHORT_ID=$(openssl rand -hex 8)
-    
+
     # Create Xray config with Reality
     echo "Creating Xray configuration..."
     mkdir -p /usr/local/etc/xray
@@ -1469,33 +1560,33 @@ EOF
 
     # Link to main config
     ln -sf /usr/local/etc/xray/config-anytls.json /usr/local/etc/xray/config.json
-    
+
     # Stop Xray before restart
     systemctl stop xray 2>/dev/null || true
     sleep 1
-    
+
     # Firewall
     if [ "$regenerate" = false ]; then
         ufw allow $PORT/tcp >/dev/null 2>&1
         ufw reload >/dev/null 2>&1
     fi
-    
+
     # Restart Xray
     systemctl restart xray
     sleep 3
-    
+
     if ! systemctl is-active --quiet xray; then
         echo -e "${RED}✗ Xray failed${NC}"
         journalctl -u xray -n 15 --no-pager
         return 1
     fi
-    
+
     echo -e "${GREEN}✓ Xray running with AnyTLS${NC}"
     rm -f /usr/local/etc/xray/config-anytls.json.old
-    
+
     # Generate config
     CONFIG="vless://$UUID@$ip:$PORT?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$SNI&fp=random&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp#oneTap-AnyTLS"
-    
+
     # Save
     cat > /root/onetap-anytls-config.txt << EOF
 ╔══════════════════════════════════════╗
@@ -1522,16 +1613,16 @@ EOF
     echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║      ✓ ANYTLS SETUP COMPLETE!      ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════╝${NC}\n"
-    
+
     cat /root/onetap-anytls-config.txt
-    
+
     echo -e "\n${YELLOW}QR CODE:${NC}"
     if command -v qrencode >/dev/null 2>&1; then
         echo "$CONFIG" | qrencode -t ANSIUTF8
     fi
-    
+
     echo -e "\n${GREEN}✓ Config saved to: /root/onetap-anytls-config.txt${NC}"
-    
+
     # Regenerate option
     echo -e "\n${BLUE}═══════════════════════════════════════${NC}"
     echo -e "${YELLOW}Options:${NC}"
@@ -1539,9 +1630,9 @@ EOF
     echo "  2) Regenerate (new SNI)"
     echo "  3) Back to main menu"
     echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
-    
+
     read -p "Choose [1-3]: " regen_choice
-    
+
     case $regen_choice in
         1)
             echo -e "\n${GREEN}Test the config!${NC}"
@@ -1562,22 +1653,22 @@ EOF
 setup_cdn() {
     local domain=$1
     local ip=$2
-    
+
     echo -e "\n${YELLOW}═══ Setting up CDN Setup (Cloudflare) ═══${NC}\n"
-    
+
     echo -e "${BLUE}This setup allows you to use Cloudflare CDN:${NC}"
     echo -e "  • Hide your real server IP"
     echo -e "  • Use Cloudflare's network"
     echo -e "  • Bypass IP-based blocking"
     echo -e "  • Free SSL certificate"
     echo ""
-    
+
     echo -e "${YELLOW}Requirements:${NC}"
     echo -e "  1. Domain added to Cloudflare"
     echo -e "  2. DNS record pointing to server IP"
     echo -e "  3. Cloudflare proxy ENABLED (orange cloud)"
     echo ""
-    
+
     read -p "Have you set up Cloudflare? (y/n): " cf_ready
     if [ "$cf_ready" != "y" ]; then
         echo -e "\n${YELLOW}Setup Cloudflare first:${NC}"
@@ -1587,27 +1678,43 @@ setup_cdn() {
         echo "  4. Run this script again"
         return 0
     fi
-    
+
+    # Install Caddy if not present
+    echo -e "\n${YELLOW}Checking Caddy installation...${NC}"
+    if ! command -v caddy >/dev/null 2>&1; then
+        echo "Caddy not found, installing..."
+        if ! install_caddy; then
+            echo -e "${RED}✗ Failed to install Caddy${NC}"
+            echo "Please install Caddy manually: apt install caddy"
+            return 1
+        fi
+
+        # Enable Caddy service
+        systemctl enable caddy >/dev/null 2>&1
+    else
+        echo -e "${GREEN}✓ Caddy is already installed${NC}"
+    fi
+
     UUID=$(cat /proc/sys/kernel/random/uuid)
     WS_PATH=$(get_random_path)
     SNI=$(get_random_sni)
-    
+
     echo -e "\n${BLUE}Configuration:${NC}"
     echo "  Domain: $domain"
     echo "  Path: $WS_PATH"
     echo "  SNI: $SNI"
     echo ""
-    
+
     # Clear ports
     clear_port 80
     clear_port 443
-    
+
     # Delete old CDN configs
     rm -f /usr/local/etc/xray/config-cdn.json.old
     if [ -f /usr/local/etc/xray/config-cdn.json ]; then
         mv /usr/local/etc/xray/config-cdn.json /usr/local/etc/xray/config-cdn.json.old
     fi
-    
+
     # Create Xray config
     mkdir -p /usr/local/etc/xray
     cat > /usr/local/etc/xray/config-cdn.json << EOF
@@ -1634,12 +1741,12 @@ setup_cdn() {
 EOF
 
     ln -sf /usr/local/etc/xray/config-cdn.json /usr/local/etc/xray/config.json
-    
+
     # Stop services before restart
     systemctl stop xray 2>/dev/null || true
     systemctl stop caddy 2>/dev/null || true
     sleep 1
-    
+
     # Create Caddy config
     mkdir -p /etc/caddy
     cat > /etc/caddy/Caddyfile << EOF
@@ -1649,24 +1756,96 @@ $domain {
 }
 EOF
 
+    # Configure firewall
+    echo "Configuring firewall..."
+    ufw allow 80/tcp >/dev/null 2>&1
+    ufw allow 443/tcp >/dev/null 2>&1
+    ufw reload >/dev/null 2>&1
+
+    # Fix Caddy systemd service file to run as root
+    echo "Configuring Caddy service..."
+    cat > /etc/systemd/system/caddy.service << 'EOF'
+[Unit]
+Description=Caddy Web Server
+Documentation=https://caddyserver.com/docs/
+After=network.target network-online.target
+Requires=network-online.target
+
+[Service]
+Type=notify
+User=root
+Group=root
+ExecStart=/usr/bin/caddy run --environ --config /etc/caddy/Caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/caddy/Caddyfile --force
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+LimitNPROC=512
+PrivateTmp=true
+ProtectSystem=full
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Reload systemd
+    systemctl daemon-reload
+
     # Start services
+    echo "Starting Xray..."
+    systemctl enable xray >/dev/null 2>&1
     systemctl restart xray
     sleep 2
+
+    echo "Starting Caddy..."
+    systemctl enable caddy >/dev/null 2>&1
     systemctl restart caddy
-    sleep 30
-    
-    if ! systemctl is-active --quiet xray || ! systemctl is-active --quiet caddy; then
-        echo -e "${RED}✗ Services failed${NC}"
+    sleep 5
+
+    # Wait for SSL certificate (can take up to 30 seconds)
+    echo "Waiting for SSL certificate from Let's Encrypt..."
+    for i in {1..30}; do
+        sleep 1
+        if systemctl is-active --quiet caddy; then
+            break
+        fi
+    done
+
+    if ! systemctl is-active --quiet xray; then
+        echo -e "${RED}✗ Xray failed to start${NC}"
+        journalctl -u xray -n 15 --no-pager
+
+        # Restore old config if exists
+        if [ -f /usr/local/etc/xray/config-cdn.json.old ]; then
+            echo "Restoring previous configuration..."
+            mv /usr/local/etc/xray/config-cdn.json.old /usr/local/etc/xray/config-cdn.json
+            ln -sf /usr/local/etc/xray/config-cdn.json /usr/local/etc/xray/config.json
+            systemctl restart xray
+        fi
         return 1
     fi
-    
+
+    if ! systemctl is-active --quiet caddy; then
+        echo -e "${RED}✗ Caddy failed to start${NC}"
+        echo "Checking Caddy logs..."
+        journalctl -u caddy -n 15 --no-pager
+        echo ""
+        echo -e "${YELLOW}Common issues:${NC}"
+        echo "  1. Domain DNS not pointing to this server"
+        echo "  2. Port 80/443 blocked by firewall"
+        echo "  3. Another service using port 80/443"
+        echo ""
+        echo "Fix the issue and run: systemctl restart caddy"
+        return 1
+    fi
+
     echo -e "${GREEN}✓ Services running${NC}"
     rm -f /usr/local/etc/xray/config-cdn.json.old
-    
+
     # Generate config
     ENCODED_PATH=$(echo -n "$WS_PATH" | jq -sRr @uri)
     CONFIG="vless://$UUID@$domain:443?encryption=none&security=tls&type=ws&host=$domain&path=$ENCODED_PATH&sni=$SNI#oneTap-CDN"
-    
+
     cat > /root/onetap-cdn-config.txt << EOF
 ╔══════════════════════════════════════╗
 ║   oneTap - CDN Setup (Cloudflare)    ║
@@ -1699,14 +1878,14 @@ EOF
     echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║      ✓ CDN SETUP COMPLETE!          ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════╝${NC}\n"
-    
+
     cat /root/onetap-cdn-config.txt
-    
+
     echo -e "\n${YELLOW}QR CODE:${NC}"
     if command -v qrencode >/dev/null 2>&1; then
         echo "$CONFIG" | qrencode -t ANSIUTF8
     fi
-    
+
     echo -e "\n${GREEN}✓ Config saved to: /root/onetap-cdn-config.txt${NC}\n"
 }
 
@@ -1714,34 +1893,34 @@ EOF
 setup_trusttunnel() {
     local domain=$1
     local ip=$2
-    
+
     clear
     echo -e "${YELLOW}═══ Setting up TrustTunnel (Real Protocol) ═══${NC}\n"
-    
+
     echo -e "${BLUE}TrustTunnel Features:${NC}"
     echo -e "  • HTTP/2 and HTTP/3 (QUIC) support"
     echo -e "  • Perfect HTTPS mimicry"
     echo -e "  • Undetectable by DPI"
     echo -e "  • Based on real GitHub implementation"
     echo ""
-    
+
     echo -e "${YELLOW}Requirements:${NC}"
     echo -e "  • Domain name"
     echo -e "  • SSL certificate (auto-generated)"
     echo -e "  • Port 443 available"
     echo ""
-    
+
     read -p "Continue with TrustTunnel setup? (y/n): " confirm
     if [ "$confirm" != "y" ]; then
         main_menu
         return
     fi
-    
+
     # Install dependencies
     echo -e "\n${YELLOW}Installing dependencies...${NC}"
     apt-get update -qq >/dev/null 2>&1
     apt-get install -y git golang-go >/dev/null 2>&1
-    
+
     # Check Go version
     if ! command -v go &> /dev/null; then
         echo -e "${RED}✗ Go installation failed${NC}"
@@ -1749,54 +1928,54 @@ setup_trusttunnel() {
         main_menu
         return
     fi
-    
+
     echo -e "${GREEN}✓ Dependencies installed${NC}"
-    
+
     # Clone TrustTunnel
     echo "Downloading TrustTunnel..."
     cd /tmp
     rm -rf TrustTunnel
     git clone https://github.com/TrustTunnel/TrustTunnel.git >/dev/null 2>&1
-    
+
     if [ ! -d "TrustTunnel" ]; then
         echo -e "${RED}✗ Failed to clone TrustTunnel repository${NC}"
         read -p "Press Enter to return..."
         main_menu
         return
     fi
-    
+
     # Build server
     echo "Building TrustTunnel server..."
     cd TrustTunnel/server
     go build -o /usr/local/bin/trusttunnel-server >/dev/null 2>&1
-    
+
     if [ ! -f /usr/local/bin/trusttunnel-server ]; then
         echo -e "${RED}✗ Failed to build TrustTunnel${NC}"
         read -p "Press Enter to return..."
         main_menu
         return
     fi
-    
+
     chmod +x /usr/local/bin/trusttunnel-server
     echo -e "${GREEN}✓ TrustTunnel built${NC}"
-    
+
     # Generate password
     TT_PASSWORD=$(openssl rand -base64 24)
-    
+
     # Stop conflicting services
     echo "Stopping conflicting services..."
     systemctl stop xray caddy 2>/dev/null || true
     clear_port 443
-    
+
     # Install Caddy for SSL if not present
     if ! command -v caddy &> /dev/null; then
         echo "Installing Caddy for SSL..."
         install_caddy
     fi
-    
+
     # Create SSL cert directory
     mkdir -p /etc/trusttunnel/certs
-    
+
     # Configure Caddy for SSL certificate
     echo "Getting SSL certificate..."
     cat > /etc/caddy/Caddyfile << EOF
@@ -1804,10 +1983,10 @@ $domain {
     reverse_proxy localhost:8443
 }
 EOF
-    
+
     systemctl restart caddy
     sleep 10  # Wait for SSL
-    
+
     # Copy certificates
     cp /var/lib/caddy/certificates/acme-v02.api.letsencrypt.org-directory/$domain/$domain.crt /etc/trusttunnel/certs/cert.pem 2>/dev/null || {
         echo -e "${YELLOW}⚠ SSL certificate not found in expected location${NC}"
@@ -1816,9 +1995,9 @@ EOF
             -out /etc/trusttunnel/certs/cert.pem -days 365 -nodes \
             -subj "/CN=$domain" >/dev/null 2>&1
     }
-    
+
     cp /var/lib/caddy/certificates/acme-v02.api.letsencrypt.org-directory/$domain/$domain.key /etc/trusttunnel/certs/key.pem 2>/dev/null || true
-    
+
     # Create TrustTunnel config
     cat > /etc/trusttunnel/config.json << EOF
 {
@@ -1831,7 +2010,7 @@ EOF
     }
 }
 EOF
-    
+
     # Create systemd service
     cat > /etc/systemd/system/trusttunnel.service << EOF
 [Unit]
@@ -1849,15 +2028,15 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 EOF
-    
+
     # Stop Caddy and start TrustTunnel
     systemctl stop caddy
     systemctl daemon-reload
     systemctl enable trusttunnel >/dev/null 2>&1
     systemctl start trusttunnel
-    
+
     sleep 3
-    
+
     if ! systemctl is-active --quiet trusttunnel; then
         echo -e "${RED}✗ TrustTunnel failed to start${NC}"
         journalctl -u trusttunnel -n 15 --no-pager
@@ -1865,14 +2044,14 @@ EOF
         main_menu
         return
     fi
-    
+
     echo -e "${GREEN}✓ TrustTunnel is running${NC}"
-    
+
     # Configure firewall
     ufw allow 443/tcp >/dev/null 2>&1
     ufw allow 443/udp >/dev/null 2>&1
     ufw reload >/dev/null 2>&1
-    
+
     # Save config
     cat > /root/onetap-trusttunnel-config.txt << EOF
 ╔══════════════════════════════════════╗
@@ -1891,7 +2070,7 @@ CLIENT SETUP:
 
 1. Download TrustTunnel client:
    GitHub: https://github.com/TrustTunnel/TrustTunnel/releases
-   
+
    Or build from source:
    git clone https://github.com/TrustTunnel/TrustTunnel.git
    cd TrustTunnel/client
@@ -1933,11 +2112,11 @@ EOF
     echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║   ✓ TRUSTTUNNEL SETUP COMPLETE!     ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════╝${NC}\n"
-    
+
     cat /root/onetap-trusttunnel-config.txt
-    
+
     echo -e "\n${GREEN}✓ Config saved to: /root/onetap-trusttunnel-config.txt${NC}\n"
-    
+
     read -p "Press Enter to return to menu..."
     main_menu
 }
@@ -1970,7 +2149,7 @@ show_configs() {
     echo -e "${GREEN}═══ Your Configurations ═══${NC}\n"
 
     local found=false
-    
+
     # Show Quick Setup config
     if [ -f /root/onetap-quick-config.txt ]; then
         echo -e "${BLUE}━━━ Quick Setup (Option 1) ━━━${NC}\n"
@@ -1978,7 +2157,7 @@ show_configs() {
         echo ""
         found=true
     fi
-    
+
     # Show Premium config
     if [ -f /root/onetap-premium-config.txt ]; then
         echo -e "${BLUE}━━━ Premium Setup (Option 2) ━━━${NC}\n"
@@ -1986,7 +2165,7 @@ show_configs() {
         echo ""
         found=true
     fi
-    
+
     # Show Advanced config
     if [ -f /root/onetap-advanced-config.txt ]; then
         echo -e "${BLUE}━━━ Advanced Setup (Option 3) ━━━${NC}\n"
@@ -1994,7 +2173,7 @@ show_configs() {
         echo ""
         found=true
     fi
-    
+
     # Show AnyTLS config
     if [ -f /root/onetap-anytls-config.txt ]; then
         echo -e "${BLUE}━━━ AnyTLS Setup (Option 6) ━━━${NC}\n"
@@ -2002,7 +2181,7 @@ show_configs() {
         echo ""
         found=true
     fi
-    
+
     # Show CDN config
     if [ -f /root/onetap-cdn-config.txt ]; then
         echo -e "${BLUE}━━━ CDN Setup (Option 7) ━━━${NC}\n"
@@ -2010,7 +2189,7 @@ show_configs() {
         echo ""
         found=true
     fi
-    
+
     # Show TrustTunnel config
     if [ -f /root/onetap-trusttunnel-config.txt ]; then
         echo -e "${BLUE}━━━ TrustTunnel (Option 8) ━━━${NC}\n"
@@ -2018,7 +2197,7 @@ show_configs() {
         echo ""
         found=true
     fi
-    
+
     # Show DNSTT config
     if [ -f /root/onetap-dnstt-config.txt ]; then
         echo -e "${BLUE}━━━ DNSTT Setup (Option 4) ━━━${NC}\n"
@@ -2026,7 +2205,7 @@ show_configs() {
         echo ""
         found=true
     fi
-    
+
     # Show other configs (backward compatibility)
     if [ -f /root/onetap-config.txt ]; then
         echo -e "${BLUE}━━━ Other Configuration ━━━${NC}\n"
@@ -2034,13 +2213,153 @@ show_configs() {
         echo ""
         found=true
     fi
-    
+
     if [ "$found" = false ]; then
         echo -e "${YELLOW}No configurations found${NC}"
         echo "Please run a setup first"
     fi
 
     echo ""
+}
+
+# Switch active configuration
+switch_config() {
+    clear
+    echo -e "${BLUE}═══ Switch Active Configuration ═══${NC}\n"
+
+    # Detect available configs
+    local configs=()
+    local config_files=()
+    local config_names=()
+
+    if [ -f /usr/local/etc/xray/config-quick.json ]; then
+        configs+=("1")
+        config_files+=("/usr/local/etc/xray/config-quick.json")
+        config_names+=("Quick Setup (WebSocket)")
+    fi
+
+    if [ -f /usr/local/etc/xray/config-premium.json ]; then
+        configs+=("2")
+        config_files+=("/usr/local/etc/xray/config-premium.json")
+        config_names+=("Premium Setup (WS+TLS)")
+    fi
+
+    if [ -f /usr/local/etc/xray/config-advanced.json ]; then
+        configs+=("3")
+        config_files+=("/usr/local/etc/xray/config-advanced.json")
+        config_names+=("Advanced Setup (4 protocols)")
+    fi
+
+    if [ -f /usr/local/etc/xray/config-anytls.json ]; then
+        configs+=("6")
+        config_files+=("/usr/local/etc/xray/config-anytls.json")
+        config_names+=("AnyTLS (Reality)")
+    fi
+
+    if [ -f /usr/local/etc/xray/config-cdn.json ]; then
+        configs+=("7")
+        config_files+=("/usr/local/etc/xray/config-cdn.json")
+        config_names+=("CDN Setup (Cloudflare)")
+    fi
+
+    if [ ${#configs[@]} -eq 0 ]; then
+        echo -e "${YELLOW}No configurations found!${NC}"
+        echo "Please create a configuration first from the main menu."
+        echo ""
+        read -p "Press Enter to continue..."
+        return
+    fi
+
+    # Show current active config
+    if [ -L /usr/local/etc/xray/config.json ]; then
+        CURRENT=$(readlink /usr/local/etc/xray/config.json)
+        echo -e "${GREEN}Currently Active:${NC} $(basename $CURRENT .json | sed 's/config-//')"
+    else
+        echo -e "${YELLOW}No active configuration${NC}"
+    fi
+
+    echo -e "\n${YELLOW}Available Configurations:${NC}\n"
+
+    for i in "${!configs[@]}"; do
+        echo -e "  ${GREEN}${configs[$i]})${NC} ${config_names[$i]}"
+    done
+
+    echo -e "\n  ${GREEN}0)${NC} Cancel"
+    echo ""
+
+    read -p "Select configuration to activate [0-7]: " choice
+
+    # Find the selected config
+    local selected_file=""
+    local selected_name=""
+    for i in "${!configs[@]}"; do
+        if [ "${configs[$i]}" = "$choice" ]; then
+            selected_file="${config_files[$i]}"
+            selected_name="${config_names[$i]}"
+            break
+        fi
+    done
+
+    if [ "$choice" = "0" ]; then
+        return
+    elif [ -z "$selected_file" ]; then
+        echo -e "${RED}Invalid choice${NC}"
+        sleep 2
+        return
+    fi
+
+    echo -e "\n${YELLOW}Switching to: $selected_name${NC}"
+
+    # Stop services
+    echo "Stopping services..."
+    systemctl stop xray 2>/dev/null || true
+    systemctl stop caddy 2>/dev/null || true
+    sleep 1
+
+    # Switch config
+    ln -sf "$selected_file" /usr/local/etc/xray/config.json
+
+    # Start appropriate services based on config
+    echo "Starting services..."
+    systemctl start xray
+    sleep 2
+
+    if ! systemctl is-active --quiet xray; then
+        echo -e "${RED}✗ Xray failed to start${NC}"
+        journalctl -u xray -n 10 --no-pager
+        echo ""
+        read -p "Press Enter to continue..."
+        return
+    fi
+
+    # Start Caddy if needed (Premium, CDN, TrustTunnel)
+    if [[ "$selected_file" =~ (premium|cdn|trusttunnel) ]]; then
+        systemctl start caddy 2>/dev/null
+        sleep 3
+
+        if systemctl is-active --quiet caddy; then
+            echo -e "${GREEN}✓ Xray and Caddy started${NC}"
+        else
+            echo -e "${YELLOW}⚠ Xray started, but Caddy failed (may not be needed)${NC}"
+        fi
+    else
+        echo -e "${GREEN}✓ Xray started${NC}"
+    fi
+
+    # Show the active config
+    echo -e "\n${GREEN}Configuration switched successfully!${NC}"
+    echo -e "\n${BLUE}Active Configuration:${NC}"
+
+    case "$choice" in
+        1) [ -f /root/onetap-quick-config.txt ] && cat /root/onetap-quick-config.txt ;;
+        2) [ -f /root/onetap-premium-config.txt ] && cat /root/onetap-premium-config.txt ;;
+        3) [ -f /root/onetap-advanced-config.txt ] && cat /root/onetap-advanced-config.txt ;;
+        6) [ -f /root/onetap-anytls-config.txt ] && cat /root/onetap-anytls-config.txt ;;
+        7) [ -f /root/onetap-cdn-config.txt ] && cat /root/onetap-cdn-config.txt ;;
+    esac
+
+    echo ""
+    read -p "Press Enter to continue..."
 }
 
 # Uninstall
@@ -2088,11 +2407,12 @@ main_menu() {
     echo -e "  ${YELLOW}8)${NC} TrustTunnel (GitHub Implementation) ${BLUE}← Experimental${NC}"
     echo -e "  ${YELLOW}9)${NC} Speed Optimization (Enable BBR)"
     echo -e "  ${YELLOW}10)${NC} Show My Configs"
-    echo -e "  ${YELLOW}11)${NC} Uninstall"
+    echo -e "  ${YELLOW}11)${NC} Switch Active Configuration ${BLUE}← Fix Port Conflicts!${NC}"
+    echo -e "  ${YELLOW}12)${NC} Uninstall"
     echo -e "  ${YELLOW}0)${NC} Exit"
     echo -e "${BLUE}═══════════════════════════════════════${NC}\n"
 
-    read -p "Enter choice [0-11]: " choice
+    read -p "Enter choice [0-12]: " choice
 
     IP=$(get_ip)
 
@@ -2186,6 +2506,9 @@ main_menu() {
             show_configs
             ;;
         11)
+            switch_config
+            ;;
+        12)
             uninstall
             ;;
         0)
