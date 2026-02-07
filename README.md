@@ -1,4 +1,4 @@
-# oneTap v2.1
+# oneTap 
 
 **Transform your VPS into a personal proxy with one command - For everyone!**
 
@@ -84,15 +84,15 @@
 **One-line installer:**
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/sinadavoudi/oneTap/main/onetap-v2.1.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/sinadavoudi/oneTap/main/onetap.sh)
 ```
 
 **Or download and run:**
 
 ```bash
-wget https://raw.githubusercontent.com/sinadavoudi/oneTap/main/onetap-v2.1.sh
-chmod +x onetap-v2.1.sh
-sudo ./onetap-v2.1.sh
+wget https://raw.githubusercontent.com/sinadavoudi/oneTap/main/onetap.sh
+chmod +x onetap.sh
+sudo ./onetap.sh
 ```
 
 ### Main Menu
@@ -132,7 +132,7 @@ Choose your setup:
 
 **Steps:**
 ```bash
-./onetap-v2.1.sh
+./onetap.sh
 1 (Quick Setup)
 1 (Auto Mode) or 2 (Manual Mode)
 Copy config or scan QR code
@@ -154,7 +154,7 @@ Copy config or scan QR code
 ```bash
 Point domain → VPS IP
 Wait 5 minutes
-./onetap-v2.1.sh → Option 2
+./onetap.sh → Option 2
 Enter domain
 Choose Auto/Manual mode
 Wait for SSL (30s)
@@ -194,7 +194,7 @@ dnstt-client -doh https://dns.google/dns-query \
 
 **Setup:**
 ```bash
-./onetap-v2.1.sh → Option 5
+./onetap.sh → Option 5
 [Automatic installation]
 
 # Client
@@ -259,7 +259,7 @@ If ping works → tunnel works!
 ### Enable BBR (Recommended)
 
 ```bash
-./onetap-v2.1.sh
+./onetap.sh
 6 (Speed Optimization)
 ```
 
