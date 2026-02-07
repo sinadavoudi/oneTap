@@ -314,14 +314,8 @@ Use responsibly and respect local laws.
 
 ## ❤️ Support the Project
 
-<a href="https://t.me/notaSea?text=Donate%20USDT%20to%20TWrtCXd15eYR1D7HAdqvqsHyRBtSsrfpLE">
-  <img src="https://img.shields.io/badge/Donate%20USDT-26A17B?style=for-the-badge&logo=binance&logoColor=white" alt="Donate USDT">
-</a>
-
 **USDT (TRC20):**  
 `TWrtCXd15eYR1D7HAdqvqsHyRBtSsrfpLE`
-
-Thank you so much! 🙏
 
 ---
 
